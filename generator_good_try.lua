@@ -430,6 +430,129 @@ local function tog(s) if s==nil then s=not m.Visible end m.Visible,oB.Visible=s,
 mB.MouseButton1Click:Connect(function() tog(false) end)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
+local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—"}
+do
+    local rarityByText = {
+        ["ОБЫЧНЫЙ"]="COMMON", ["Обычный"]="COMMON",
+        ["НЕОБЫЧНЫЙ"]="UNCOMMON", ["Необычный"]="UNCOMMON",
+        ["РЕДКИЙ"]="RARE", ["ЭПИЧЕСКИЙ"]="EPIC",
+        ["МИФИЧЕСКИЙ"]="MYTHIC", ["ЛЕГЕНДАРНЫЙ"]="LEGENDARY",
+    }
+    for _,rarity in ipairs(rars) do
+        rarityByText[rarity.n] = rarity.id
+        rarityByText[rarity.id] = rarity.id
+    end
+
+    local function plainText(label)
+        return label.Text:gsub("<[^>]*>", ""):match("^%s*(.-)%s*$")
+    end
+
+    local function readPrice(card)
+        local body = card:FindFirstChild("Body")
+        local priceBox = body and body:FindFirstChild("CanvasGroup")
+        if not priceBox then return end
+        local children = priceBox:GetChildren()
+        local function parseLabel(label, requireCurrency)
+            if not label or not label:IsA("TextLabel") then return end
+            local value = plainText(label)
+            if requireCurrency and not value:match("₽$") then return end
+            local digits = value:gsub("₽$", ""):gsub("%s", "")
+            digits = digits:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
+            return tonumber(digits:match("^%d+$"))
+        end
+        local price = parseLabel(children[3],false)
+        if price then return fmtNum(price).." ₽" end
+        for _,label in ipairs(children) do
+            price = parseLabel(label,true)
+            if price then return fmtNum(price).." ₽" end
+        end
+    end
+
+    local function readPlate(plate)
+        local labels = {}
+        local function normalize(value)
+            local compact = value:gsub("%s", ""):gsub(utf8.char(160), ""):gsub("RUS$", "")
+            local first,digits,ending,region = compact:match("^(%D+)(%d%d%d)(%D+)(%d%d%d?)$")
+            if first and utf8.len(first)==1 and utf8.len(ending)==2 then
+                return first..digits..ending.." "..region
+            end
+        end
+        for _,label in ipairs(plate:GetDescendants()) do
+            if label:IsA("TextLabel") and label.Visible then
+                local value = plainText(label)
+                local number = normalize(value)
+                if number then return number end
+                if value ~= "" and value ~= "RUS" then table.insert(labels,label) end
+            end
+        end
+        table.sort(labels,function(a,b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
+        local parts = {}
+        for _,label in ipairs(labels) do table.insert(parts,plainText(label)) end
+        return normalize(table.concat(parts))
+    end
+
+    local seen = {}
+    local latestCard,results
+    local function observeCard(card,baseline)
+        if not card:IsA("GuiObject") or not card.Visible then return end
+        local header,plate = card:FindFirstChild("Frame"),card:FindFirstChild("Plate")
+        if not header or not plate then return end
+
+        local rarity,caption
+        for _,label in ipairs(header:GetChildren()) do
+            if label:IsA("TextLabel") and label.Visible then
+                caption = plainText(label)
+                rarity = rarityByText[caption]
+                if rarity then break end
+            end
+        end
+        if not rarity then return end
+
+        local number = readPlate(plate)
+        local previous = seen[card]
+        if previous and previous.rarity == rarity and (not number or not previous.number or previous.number == number) then
+            if number and not previous.number then
+                previous.number = number
+                if latestCard == card then afkRolls.last = number end
+            end
+            if latestCard == card then
+                afkRolls.lastPrice = readPrice(card) or afkRolls.lastPrice
+            end
+            return
+        end
+        seen[card] = {rarity=rarity, number=number}
+        if baseline then return end
+
+        afkRolls.count += 1
+        if rarMap[rarity] then
+            afkRolls.caught += 1
+            afkRolls.byRarity[rarity] = (afkRolls.byRarity[rarity] or 0) + 1
+        end
+        latestCard = card
+        afkRolls.last = number or caption
+        afkRolls.lastPrice = readPrice(card) or "—"
+    end
+
+    task.spawn(function()
+        while g.Parent do
+            local attached = results and results:IsDescendantOf(plr)
+            if not attached then
+                local pg = plr:FindFirstChild("PlayerGui")
+                local window = pg and pg:FindFirstChild("RollWindow",true)
+                results = window and window:FindFirstChild("Results")
+            end
+            if results then
+                for _,card in ipairs(results:GetChildren()) do observeCard(card,not afkRolls.available) end
+                afkRolls.available = true
+            end
+            for card in pairs(seen) do
+                if card.Parent ~= results then seen[card] = nil end
+            end
+            task.wait(0.2)
+        end
+    end)
+end
+
 local exitAfkMode
 do
     local openAfk = bt(p7,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,200),cd,8,1)
@@ -438,13 +561,13 @@ do
         Visible=false, Active=true, ZIndex=30, BorderSizePixel=0,
     },g)
     local card = ui("Frame", {
-        Size=u(0,520,0,336), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
+        Size=u(0,520,0,356), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
         BackgroundColor3=bg, ZIndex=31,
     },overlay,12,1)
     local scale = Instance.new("UIScale",card)
     local function fitCard()
         local area = overlay.AbsoluteSize
-        scale.Scale = math.clamp(math.min((area.X-16)/520,(area.Y-16)/336),0.25,1)
+        scale.Scale = math.clamp(math.min((area.X-16)/520,(area.Y-16)/356),0.25,1)
     end
     overlay:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitCard)
 
@@ -477,8 +600,8 @@ do
     local balance = text(balanceBox,"—",u(1,0,0,20),u(0,0,0,22),green,Enum.TextXAlignment.Center)
     balance.TextSize = 14
 
-    local function section(title,x,firstCaption,secondCaption,lastCaption)
-        local column = frame(card,u(0,244,0,211),u(0,x,0,82))
+    local function section(title,x,firstCaption,secondCaption,lastCaption,extraCaption)
+        local column = frame(card,u(0,244,0,231),u(0,x,0,82))
         local heading = text(column,title,u(1,-20,0,21),u(0,10,0,6),ac)
         heading.TextSize = 14
         local function metric(parent,caption,y,initial,color)
@@ -496,12 +619,14 @@ do
             ui("Frame",{Size=u(0,3,0,13),Position=u(0,4,0,4),BackgroundColor3=rarity.col,BorderSizePixel=0,ZIndex=33},row,2)
             counts[rarity.id] = metric(row,rarity.n,1,"—")
         end
-        local last = metric(frame(column,u(1,-16,0,28),u(0,8,0,175),bg,5),lastCaption,4,"—")
-        return first,second,counts,last
+        local lastBox = frame(column,u(1,-16,0,48),u(0,8,0,175),bg,5)
+        local last = metric(lastBox,lastCaption,extraCaption and 4 or 14,"—")
+        local extra = extraCaption and metric(lastBox,extraCaption,24,"—",green)
+        return first,second,counts,last,extra
     end
 
     local bought,spent,counts,last = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
-    section("Крутки номеров",264,"Прокруты","Улов (все)","Выпавший")
+    local rolled,caught,rollCounts,lastRoll,lastPrice = section("Крутки номеров",264,"Прокруты","Улов (редкие+)","Выпавший","Стоимость")
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
 
@@ -525,6 +650,13 @@ do
         spent.Text = fmtNum(afkPurchases.spent).." ₽"
         for id,label in pairs(counts) do label.Text = "×"..(afkPurchases.byRarity[id] or 0) end
         last.Text = afkPurchases.last
+        if afkRolls.available then
+            rolled.Text = tostring(afkRolls.count)
+            caught.Text = tostring(afkRolls.caught)
+            for id,label in pairs(rollCounts) do label.Text = "×"..(afkRolls.byRarity[id] or 0) end
+            lastRoll.Text = afkRolls.last
+            lastPrice.Text = afkRolls.lastPrice
+        end
     end
 
     exitAfkMode = function()
