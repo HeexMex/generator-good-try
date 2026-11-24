@@ -2,16 +2,20 @@ local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("Repli
 local plr=P.LocalPlayer
 local Http=game:GetService("HttpService")
 local configPath="GGT/config_"..tostring(plr.UserId)..".json"
-local savedConfig={}
-if type(readfile)=="function" then
+local function readConfig()
+    if type(readfile)~="function" then return end
     local ok,loaded=pcall(function() return Http:JSONDecode(readfile(configPath)) end)
-    if ok and type(loaded)=="table" and loaded.version==1 then savedConfig=loaded end
+    if ok and type(loaded)=="table" and loaded.version==1 then return loaded end
 end
+local savedConfig=readConfig() or {}
 local function configNumber(value,default,minimum,maximum)
     if type(value)~="number" or value~=value then return default end
     return math.clamp(value,minimum,maximum)
 end
 local saveConfig
+local function configNickname(value)
+    return type(value)=="string" and #value<=20 and value:match("^[%w_]+$") or ""
+end
 local Rem=R:WaitForChild("Remotes")
 local GM,ML,MB,PS,ST=Rem.GetMarket,Rem.MarketLot,Rem.MarketBuy,Rem.Post,Rem.Stall
 if C:FindFirstChild("ZS") then C.ZS:Destroy() end
@@ -73,6 +77,7 @@ for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","�
 end
 
 local prof=ui("Frame",{Size=u(1,-12,0,40),Position=u(0,6,1,-46),BackgroundColor3=cd},sdF,7,1)
+local configB=bt(sdF,"Конфиги",u(1,-12,0,28),u(0,6,1,-81),cd,7,1)
 local av=ui("ImageLabel",{Size=u(0,26,0,26),Position=u(0,5,0,7),BackgroundColor3=bg,Image="rbxthumb://type=AvatarHeadShot&id="..tostring(plr.UserId).."&w=100&h=100"},prof,13)
 local avS=Instance.new("UIStroke",av) avS.Color,avS.Thickness=ac,1
 local dLbl=lb(prof,plr.DisplayName,u(1,-37,0,15),u(0,34,0,5),tx,18) dLbl.TextSize,dLbl.TextTruncate=10,Enum.TextTruncate.AtEnd
@@ -124,6 +129,7 @@ end
 local stC=ui("Frame",{Size=u(1,0,0,44),Position=u(0,0,0,192),BackgroundColor3=cd},p1,8,1)
 local st=lb(stC,"Ожидание | Успешных покупок: 0",u(1,-14,1,-8),u(0,8,0,4),tx,17) st.TextWrapped,st.TextYAlignment=true,0
 local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
+local refreshTraderFilters
 do
     local trCard=ui("Frame",{Size=u(1,0,0,158),BackgroundColor3=cd},p4,8,1)
     local function normalizeItemName(value)
@@ -156,6 +162,7 @@ do
         lb(trCard,filter.name,u(1,-144,0,28),u(0,12,0,y),sb)
         filter.status = lb(trCard,"—",u(0,84,0,28),u(1,-140,0,y),sb,17,Enum.TextXAlignment.Right)
         local toggle = bt(trCard,filter.enabled and "ON" or "OFF",u(0,40,0,26),u(1,-50,0,y+1),filter.enabled and ac or bg,6,1)
+        filter.toggle = toggle
         toggle.Activated:Connect(function()
             filter.enabled = not filter.enabled
             if type(savedConfig.traderFilters)~="table" then savedConfig.traderFilters={true,true} end
@@ -163,6 +170,13 @@ do
             toggle.Text = filter.enabled and "ON" or "OFF"
             toggle.BackgroundColor3 = filter.enabled and ac or bg
         end)
+    end
+    refreshTraderFilters=function()
+        for index,filter in ipairs(filters) do
+            filter.enabled=type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false
+            filter.toggle.Text=filter.enabled and "ON" or "OFF"
+            filter.toggle.BackgroundColor3=filter.enabled and ac or bg
+        end
     end
     local hint = lb(trCard,"Открой окно торговца, чтобы проверить товары.",u(1,-24,0,30),u(0,12,0,117),sb,17)
     hint.TextWrapped = true
@@ -214,8 +228,7 @@ end
 
 local mC1=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
 lb(mC1,"Юзернейм в Roblox:",u(1,-14,0,15),u(0,8,0,3),sb,17)
-local rememberedNick=type(savedConfig.recipient)=="string" and savedConfig.recipient:match("^[%w_]+$") or ""
-if #rememberedNick>20 then rememberedNick="" end
+local rememberedNick=configNickname(savedConfig.recipient)
 local idBox=bx(mC1,rememberedNick,u(1,-109,0,24),u(0,8,0,20)) idBox.PlaceholderText="Введи юзернейм..."
 local rememberB=bt(mC1,"Запомнить",u(0,85,0,24),u(1,-93,0,20),cd,6,1)
 
@@ -234,7 +247,7 @@ rememberB.Activated:Connect(function()
     end
     local previous = rememberedNick
     rememberedNick = nickname
-    if saveConfig and saveConfig() then
+    if saveConfig and saveConfig(true) then
         idBox.Text = nickname
         mSt.Text = nickname=="" and "Сохранённый ник удалён." or "Получатель сохранён: "..nickname
     else
@@ -308,20 +321,41 @@ do
     end)
 end
 
-local optCfg={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
-if type(savedConfig.optimization)=="table" then
-    for key,default in pairs(optCfg) do
-        local value = savedConfig.optimization[key]
-        if type(default)=="boolean" and type(value)=="boolean" then optCfg[key]=value end
+local function configOptimization(raw)
+    local config={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
+    if type(raw)=="table" then
+        for key,default in pairs(config) do
+            local value = raw[key]
+            if type(default)=="boolean" and type(value)=="boolean" then config[key]=value end
+        end
+        config.fps=math.floor(configNumber(raw.fps,30,0,1000))
     end
-    optCfg.fps=math.floor(configNumber(savedConfig.optimization.fps,30,0,1000))
+    return config
 end
-local optOpenB=bt(p7,"ОПТИМИЗАЦИЯ",u(0.42,-4,0,38),u(0,0,1,-38),ac,8)
-local customB=bt(p7,"КАСТОМ",u(0.28,-6,0,38),u(0.42,3,1,-38),cd,8,1)
-local configB=bt(p7,"КОНФИГ",u(0.3,-4,0,38),u(0.7,4,1,-38),cd,8,1)
-local openAfk=bt(p7,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,200),cd,8,1)
+local optCfg=configOptimization(savedConfig.optimization)
+local settingsActions=ui("Frame",{
+    Size=u(1,0,0,76),Position=u(0,0,1,-76),BackgroundTransparency=1,ClipsDescendants=true,
+},p7)
+local optOpenB=bt(settingsActions,"ОПТИМИЗАЦИЯ",u(0.58,-4,0,38),u(0,0,1,-38),ac,8)
+local customB=bt(settingsActions,"КАСТОМ",u(0.42,-4,0,38),u(0.58,4,1,-38),cd,8,1)
+local openAfk=bt(settingsActions,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,0),cd,8,1)
+
+local settingsOverlays={}
+local function hideSettingsActionsBehind(overlay)
+    table.insert(settingsOverlays,overlay)
+    local function refresh()
+        for _,layer in ipairs(settingsOverlays) do
+            if layer.Visible then settingsActions.Visible=false return end
+        end
+        settingsActions.Visible=true
+    end
+    overlay:GetPropertyChangedSignal("Visible"):Connect(refresh)
+    refresh()
+end
+hideSettingsActionsBehind(dlg)
 
 local optModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,8,1)
+hideSettingsActionsBehind(optModal)
 local optScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-44),Position=u(0,6,0,6),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,272),ZIndex=9},optModal)
 local optItems={
     {k="shadows",n="Убрать тени и туман",tip="Отключает глобальные тени, туман и эффекты постобработки для снижения нагрузки на видеокарту."},
@@ -523,10 +557,14 @@ local run,takeRun,stRun,okC,lN=false,false,false,0,0
 local sniperSession=0
 local takenPosts={}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
-if type(savedConfig.menuKey)=="string" then
-    local ok,key = pcall(function() return Enum.KeyCode[savedConfig.menuKey] end)
-    if ok and key and key~=Enum.KeyCode.Unknown then menuKey=key end
+local function configMenuKey(name)
+    if type(name)=="string" then
+        local ok,key = pcall(function() return Enum.KeyCode[name] end)
+        if ok and key and key~=Enum.KeyCode.Unknown then return key end
+    end
+    return Enum.KeyCode.RightControl
 end
+menuKey=configMenuKey(savedConfig.menuKey)
 bindB.Text=menuKey.Name
 
 local originalProperties,originalGuiProperties={},{}
@@ -664,11 +702,12 @@ optApplyB.MouseButton1Click:Connect(function()
 end)
 
 local modernTheme,menuAnimating = false,false
-local refreshResponsiveText
+local refreshResponsiveText,setTheme
 do
     local classicColors = {bg,sd,cd,ac,tx,sb,strokeColor,danger}
     local modernColors = {c(14,17,29),c(21,27,46),c(31,40,64),c(79,99,213),c(246,249,255),c(171,188,219),c(53,68,103),c(177,64,89)}
     local modal = ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,10,1)
+    hideSettingsActionsBehind(modal)
     local title = lb(modal,"Оформление меню",u(1,-24,0,34),u(0,12,0,8),tx,18)
     title.TextSize,title.ZIndex = 15,9
     local classic = bt(modal,"Старый дизайн",u(1,-24,0,44),u(0,12,0,54),cd,8,1)
@@ -686,7 +725,7 @@ do
     local dividerTint = Instance.new("UIGradient",divider)
     dividerTint.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0.9),NumberSequenceKeypoint.new(0.33,0.12),NumberSequenceKeypoint.new(1,1)})
 
-    local function setTheme(useModern)
+    setTheme=function(useModern)
         local from,to = classicColors,modernColors
         if not useModern then from,to = modernColors,classicColors end
         if modernTheme ~= useModern then
@@ -1438,38 +1477,92 @@ do
     m.Size=u(0,width,0,height)
     m.Position=u(0.5,-math.floor(width/2),0.3,0)
 
-    saveConfig=function()
+    saveConfig=function(recipientOnly)
         if type(writefile)~="function" then return false end
-        local entry={
-            version=1, recipient=rememberedNick, modern=modernTheme, menuKey=menuKey.Name,
-            width=math.clamp(m.Size.X.Offset,435,1600), height=math.clamp(m.Size.Y.Offset,320,1000),
-            mailDelay=configNumber(tonumber(mailDelayBox.Text),4,2,3600),
-            stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
-            optimization=table.clone(optCfg),
-            traderFilters={true,true},
-        }
-        if type(savedConfig.traderFilters)=="table" then
-            for i=1,2 do entry.traderFilters[i]=savedConfig.traderFilters[i]~=false end
+        local entry=recipientOnly and readConfig()
+        if entry then
+            entry.recipient=rememberedNick
+        else
+            entry={
+                version=1, recipient=rememberedNick, modern=modernTheme, menuKey=menuKey.Name,
+                width=math.clamp(m.Size.X.Offset,435,1600), height=math.clamp(m.Size.Y.Offset,320,1000),
+                mailDelay=configNumber(tonumber(mailDelayBox.Text),4,2,3600),
+                stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
+                optimization=table.clone(optCfg),
+                traderFilters={true,true},
+            }
+            if type(savedConfig.traderFilters)=="table" then
+                for i=1,2 do entry.traderFilters[i]=savedConfig.traderFilters[i]~=false end
+            end
         end
         if type(makefolder)=="function" then pcall(makefolder,"GGT") end
         return pcall(function() writefile(configPath,Http:JSONEncode(entry)) end)
     end
 
-    local configNotice=0
+    local configOverlay=ui("Frame",{
+        Size=u(1,0,1,0),BackgroundColor3=bg,BackgroundTransparency=0.2,
+        Visible=false,Active=true,ZIndex=20,
+    },m,10)
+    hideSettingsActionsBehind(configOverlay)
+    local card=ui("Frame",{
+        Size=u(0.8,0,0,163),Position=u(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),
+        BackgroundColor3=sd,ZIndex=21,
+    },configOverlay,10,1)
+    Instance.new("UISizeConstraint",card).MaxSize=Vector2.new(360,163)
+    local heading=lb(card,"Конфиги",u(1,-66,0,27),u(0,14,0,9),tx,18)
+    heading.TextSize,heading.ZIndex=15,22
+    local close=bt(card,"×",u(0,32,0,28),u(1,-42,0,9),cd,6,1)
+    local save=bt(card,"Сохранить",u(0.5,-16,0,38),u(0,12,0,53),ac,8)
+    local apply=bt(card,"Применить",u(0.5,-16,0,38),u(0.5,4,0,53),cd,8,1)
+    close.ZIndex,save.ZIndex,apply.ZIndex=22,22,22
+    local status=lb(card,"",u(1,-24,0,42),u(0,12,0,106),sb,17)
+    status.TextWrapped,status.ZIndex=true,22
+
     configB.Activated:Connect(function()
-        configNotice+=1
-        local notice=configNotice
-        configB.Text=saveConfig() and "СОХРАНЕНО" or "ОШИБКА"
-        task.delay(2,function()
-            if g.Parent and notice==configNotice then configB.Text="КОНФИГ" end
-        end)
+        status.Text=readConfig() and "Сохранённый конфиг найден." or "Для этого аккаунта пока нет сохранённого конфига."
+        configOverlay.Visible=true
+    end)
+    close.Activated:Connect(function() configOverlay.Visible=false end)
+    save.Activated:Connect(function()
+        status.Text=saveConfig() and "Текущие настройки сохранены." or "Не удалось записать файл конфига."
+    end)
+    apply.Activated:Connect(function()
+        local config=readConfig()
+        if not config then
+            status.Text="Не удалось прочитать сохранённый конфиг."
+            return
+        end
+        savedConfig=config
+        setTheme(config.modern==true)
+        m.Size=u(0,configNumber(config.width,435,435,1600),0,configNumber(config.height,320,320,1000))
+        menuKey,waitingBind=configMenuKey(config.menuKey),false
+        bindB.Text=menuKey.Name
+        mailDelayBox.Text=tostring(configNumber(config.mailDelay,4,2,3600))
+        stallDelayBox.Text=tostring(configNumber(config.stallDelay,2,1,3600))
+        rememberedNick=configNickname(config.recipient)
+        idBox.Text=rememberedNick
+        refreshTraderFilters()
+        optCfg=configOptimization(config.optimization)
+        for key,button in pairs(optBtns) do
+            button.Text=optCfg[key] and "ON" or "OFF"
+            button.BackgroundColor3=optCfg[key] and ac or bg
+        end
+        fpsBox.Text=tostring(optCfg.fps)
+        applyCustomOpt(table.clone(optCfg))
+        status.Text="Конфиг загружен и применён."
     end)
 
-    local traderArrival=workspace.ChildAdded:Connect(function(child)
-        if child.Name~="TraderWalker" or (not m.Visible and not oB.Visible) then return end
-        showPage(2)
-        tog(true)
-    end)
+    local function showTraderOnArrival(npc)
+        if not npc or npc.Name~="TraderWalker" then return end
+        task.defer(function()
+            if not g.Parent or not npc:IsDescendantOf(workspace) then return end
+            if not m.Visible and not oB.Visible and not menuAnimating then return end
+            showPage(2)
+            tog(true)
+        end)
+    end
+    local traderArrival=workspace.DescendantAdded:Connect(showTraderOnArrival)
+    showTraderOnArrival(workspace:FindFirstChild("TraderWalker",true))
     g.Destroying:Connect(function() traderArrival:Disconnect() end)
 end
 
