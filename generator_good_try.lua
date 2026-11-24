@@ -52,10 +52,14 @@ local mB=bt(tp,"—",u(0,24,0,22),u(1,-54,0,6),cd)
 local cB=bt(tp,"X",u(0,24,0,22),u(1,-27,0,6),c(200,55,65))
 
 local dlg=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=c(10,10,14),BackgroundTransparency=0.15,Visible=false,ZIndex=10},m,10)
-local dc=ui("Frame",{Size=u(0,210,0,95),Position=u(0.5,-105,0.5,-47),BackgroundColor3=sd,ZIndex=11},dlg,8,1)
-ui("TextLabel",{Size=u(1,-10,0,38),Position=u(0,5,0,6),BackgroundTransparency=1,Text="Закрыть меню?",TextColor3=tx,Font=18,TextSize=12,ZIndex=12},dc)
-local yB=bt(dc,"Да",u(0.45,0,0,28),u(0,10,1,-36),c(200,55,65)) yB.ZIndex=12
-local nB=bt(dc,"Нет",u(0.45,0,0,28),u(0.55,-10,1,-36),cd) nB.ZIndex=12
+local yB,nB
+do
+    local panel=ui("Frame",{Size=u(0,210,0,95),Position=u(0.5,-105,0.5,-47),BackgroundColor3=sd,ZIndex=11},dlg,8,1)
+    ui("TextLabel",{Size=u(1,-10,0,38),Position=u(0,5,0,6),BackgroundTransparency=1,Text="Закрыть меню?",TextColor3=tx,Font=18,TextSize=12,ZIndex=12},panel)
+    yB=bt(panel,"Да",u(0.45,0,0,28),u(0,10,1,-36),danger)
+    nB=bt(panel,"Нет",u(0.45,0,0,28),u(0.55,-10,1,-36),cd)
+    yB.ZIndex,nB.ZIndex=12,12
+end
 
 local sdF=ui("Frame",{Size=u(0,98,1,-34),Position=u(0,0,0,34),BackgroundColor3=sd,BorderSizePixel=0},m)
 local p1=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1},m)
@@ -76,12 +80,18 @@ for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","�
     tb.Activated:Connect(function() showPage(i) end)
 end
 
-local prof=ui("Frame",{Size=u(1,-12,0,40),Position=u(0,6,1,-46),BackgroundColor3=cd},sdF,7,1)
 local configB=bt(sdF,"Конфиги",u(1,-12,0,28),u(0,6,1,-81),cd,7,1)
-local av=ui("ImageLabel",{Size=u(0,26,0,26),Position=u(0,5,0,7),BackgroundColor3=bg,Image="rbxthumb://type=AvatarHeadShot&id="..tostring(plr.UserId).."&w=100&h=100"},prof,13)
-local avS=Instance.new("UIStroke",av) avS.Color,avS.Thickness=ac,1
-local dLbl=lb(prof,plr.DisplayName,u(1,-37,0,15),u(0,34,0,5),tx,18) dLbl.TextSize,dLbl.TextTruncate=10,Enum.TextTruncate.AtEnd
-local uLbl=lb(prof,"@"..plr.Name,u(1,-37,0,13),u(0,34,0,20),sb,17) uLbl.TextSize,uLbl.TextTruncate=9,Enum.TextTruncate.AtEnd
+local avatarImage="rbxthumb://type=AvatarHeadShot&id="..tostring(plr.UserId).."&w=100&h=100"
+do
+    local profile=ui("Frame",{Size=u(1,-12,0,40),Position=u(0,6,1,-46),BackgroundColor3=cd},sdF,7,1)
+    local avatar=ui("ImageLabel",{Size=u(0,26,0,26),Position=u(0,5,0,7),BackgroundColor3=bg,Image=avatarImage},profile,13)
+    local outline=Instance.new("UIStroke",avatar)
+    outline.Color,outline.Thickness=ac,1
+    local display=lb(profile,plr.DisplayName,u(1,-37,0,15),u(0,34,0,5),tx,18)
+    display.TextSize,display.TextTruncate=10,Enum.TextTruncate.AtEnd
+    local username=lb(profile,"@"..plr.Name,u(1,-37,0,13),u(0,34,0,20),sb,17)
+    username.TextSize,username.TextTruncate=9,Enum.TextTruncate.AtEnd
+end
 local bl={}
 local sorts={{id="cheap",n="Дешёвые"},{id="new",n="Новые"},{id="ending",n="Скоро конец"},{id="expensive",n="Дорогие"},{id="luck",n="Удача"}}
 local curSort={id="new",n="Новые"}
@@ -272,22 +282,29 @@ for i=1,4 do
 end
 local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) stInfo.TextWrapped,stInfo.TextYAlignment=true,0
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
-local setR1=ui("Frame",{Size=u(1,0,0,36),BackgroundColor3=cd},p7,8,1)
-lb(setR1,"Клавиша меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
-local bindB=bt(setR1,"RightControl",u(0.42,-8,0,24),u(0.58,0,0,7),bg,6,1)
-
-local setR2=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,40),BackgroundColor3=cd},p7,8,1)
-lb(setR2,"Анти-АФК (защита от кика):",u(0.7,0,1,0),u(0,10,0,0),sb)
 local afkOn=true
-local afkB=bt(setR2,"ON",u(0,46,0,24),u(1,-54,0,7),ac,6,1)
+local bindB,afkB,mailDelayBox,stallDelayBox
+do
+    local function settingRow(y)
+        return ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,y),BackgroundColor3=cd},p7,8,1)
+    end
 
-local setR3=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,80),BackgroundColor3=cd},p7,8,1)
-lb(setR3,"Пауза проверки почты (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
-local mailDelayBox=bx(setR3,tostring(configNumber(savedConfig.mailDelay,4,2,3600)),u(0,46,0,24),u(1,-54,0,7))
+    local hotkeyRow=settingRow(0)
+    lb(hotkeyRow,"Клавиша меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
+    bindB=bt(hotkeyRow,"RightControl",u(0.42,-8,0,24),u(0.58,0,0,7),bg,6,1)
 
-local setR4=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,120),BackgroundColor3=cd},p7,8,1)
-lb(setR4,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
-local stallDelayBox=bx(setR4,tostring(configNumber(savedConfig.stallDelay,2,1,3600)),u(0,46,0,24),u(1,-54,0,7))
+    local idleRow=settingRow(40)
+    lb(idleRow,"Анти-АФК (защита от кика):",u(0.7,0,1,0),u(0,10,0,0),sb)
+    afkB=bt(idleRow,"ON",u(0,46,0,24),u(1,-54,0,7),ac,6,1)
+
+    local mailRow=settingRow(80)
+    lb(mailRow,"Пауза проверки почты (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
+    mailDelayBox=bx(mailRow,tostring(configNumber(savedConfig.mailDelay,4,2,3600)),u(0,46,0,24),u(1,-54,0,7))
+
+    local stallRow=settingRow(120)
+    lb(stallRow,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
+    stallDelayBox=bx(stallRow,tostring(configNumber(savedConfig.stallDelay,2,1,3600)),u(0,46,0,24),u(1,-54,0,7))
+end
 
 do
     local upkeepInterval = 60 * 60
@@ -396,18 +413,23 @@ local function fmtPlateRich(rawStr)
 end
 
 local tipBox=ui("Frame",{Size=u(0,295,0,0),Position=u(0,112,0,44),BackgroundColor3=c(19,19,27),AutomaticSize=Enum.AutomaticSize.Y,Visible=false,ZIndex=25},m,8)
-local tipStroke=Instance.new("UIStroke",tipBox) tipStroke.Color,tipStroke.Thickness=ac,1
-local tipPad=Instance.new("UIPadding",tipBox) tipPad.PaddingTop,tipPad.PaddingBottom,tipPad.PaddingLeft,tipPad.PaddingRight=UDim.new(0,8),UDim.new(0,8),UDim.new(0,10),UDim.new(0,10)
-local tipLbl=lb(tipBox,"",u(1,0,0,0),u(0,0,0,0),tx,17)
-tipLbl.RichText,tipLbl.TextWrapped,tipLbl.AutomaticSize,tipLbl.ZIndex=true,true,Enum.AutomaticSize.Y,26
+local bindTip
+do
+    local tipStroke=Instance.new("UIStroke",tipBox)
+    tipStroke.Color,tipStroke.Thickness=ac,1
+    local tipPad=Instance.new("UIPadding",tipBox)
+    tipPad.PaddingTop,tipPad.PaddingBottom,tipPad.PaddingLeft,tipPad.PaddingRight=UDim.new(0,8),UDim.new(0,8),UDim.new(0,10),UDim.new(0,10)
+    local tipLbl=lb(tipBox,"",u(1,0,0,0),u(0,0,0,0),tx,17)
+    tipLbl.RichText,tipLbl.TextWrapped,tipLbl.AutomaticSize,tipLbl.ZIndex=true,true,Enum.AutomaticSize.Y,26
 
-local function bindTip(obj,textStr,yOffset)
-    obj.MouseEnter:Connect(function()
-        tipLbl.Text=textStr
-        tipBox.Position=u(0,112,0,yOffset or 44)
-        tipBox.Visible=true
-    end)
-    obj.MouseLeave:Connect(function() tipBox.Visible=false end)
+    bindTip=function(obj,textStr,yOffset)
+        obj.MouseEnter:Connect(function()
+            tipLbl.Text=textStr
+            tipBox.Position=u(0,112,0,yOffset or 44)
+            tipBox.Visible=true
+        end)
+        obj.MouseLeave:Connect(function() tipBox.Visible=false end)
+    end
 end
 
 local mailLogCount=0
@@ -909,8 +931,8 @@ end
 mB.MouseButton1Click:Connect(function() tog(false) end)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
-local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—", batchPrice=nil}
-do
+local afkRolls = (function()
+    local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—"}
     local rarityByText = {
         ["ОБЫЧНЫЙ"]="COMMON", ["Обычный"]="COMMON",
         ["НЕОБЫЧНЫЙ"]="UNCOMMON", ["Необычный"]="UNCOMMON",
@@ -1155,10 +1177,10 @@ do
         if stopMini then stopMini() end
     end)
     bindRollTrees()
-end
+    return afkRolls
+end)()
 
-local exitAfkMode
-do
+local exitAfkMode = (function()
     local overlay = ui("Frame", {
         Size=u(1,0,1,0), BackgroundColor3=bg, BackgroundTransparency=0.15,
         Visible=false, Active=true, ZIndex=30, BorderSizePixel=0,
@@ -1192,7 +1214,7 @@ do
     timer.TextSize = 14
     local avatar = ui("ImageLabel",{
         Size=u(0,50,0,50), Position=u(0.5,-25,0,10), BackgroundColor3=cd,
-        Image=av.Image, ZIndex=33,
+        Image=avatarImage, ZIndex=33,
     },card,25,1)
     ui("Frame",{Size=u(0,9,0,9),Position=u(1,-9,1,-9),BackgroundColor3=green,BorderSizePixel=0,ZIndex=34},avatar,5)
     local name = text(card,plr.DisplayName,u(0,118,0,16),u(0.5,-59,0,60),tx,Enum.TextXAlignment.Center)
@@ -1322,7 +1344,7 @@ do
         priceLabel.Text = afkRolls.batchPrice and "Стоимость пачки" or "Стоимость"
     end
 
-    exitAfkMode = function()
+    local function exitAfkMode()
         if not overlay.Visible then return false end
         overlay.Visible = false
         g.DisplayOrder = previousOrder
@@ -1352,7 +1374,8 @@ do
             task.wait(1)
         end
     end)
-end
+    return exitAfkMode
+end)()
 
 do
     local resizeInput,resizeStart,edge,baseSize,basePosition
