@@ -58,7 +58,7 @@ local p1=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTrans
 local p4=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local p5=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local p6=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
-local p7=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
+local p7=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false,ClipsDescendants=true},m)
 local pgs,tbs={p1,p4,p6,p5,p7},{}
 local function showPage(index)
     for i,tab in ipairs(tbs) do
@@ -319,6 +319,7 @@ end
 local optOpenB=bt(p7,"ОПТИМИЗАЦИЯ",u(0.42,-4,0,38),u(0,0,1,-38),ac,8)
 local customB=bt(p7,"КАСТОМ",u(0.28,-6,0,38),u(0.42,3,1,-38),cd,8,1)
 local configB=bt(p7,"КОНФИГ",u(0.3,-4,0,38),u(0.7,4,1,-38),cd,8,1)
+local openAfk=bt(p7,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,200),cd,8,1)
 
 local optModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,8,1)
 local optScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-44),Position=u(0,6,0,6),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,272),ZIndex=9},optModal)
@@ -723,7 +724,7 @@ do
         end
         mB.Size,cB.Size = u(0,useModern and 28 or 24,0,useModern and 26 or 22),u(0,useModern and 28 or 24,0,useModern and 26 or 22)
         mB.Position,cB.Position = u(1,useModern and -68 or -54,0,useModern and 4 or 6),u(1,useModern and -34 or -27,0,useModern and 4 or 6)
-        for _,button in ipairs({optOpenB,customB,configB,tB,stAutoB,mSendB,mTakeB}) do
+        for _,button in ipairs({optOpenB,customB,configB,openAfk,tB,stAutoB,mSendB,mTakeB}) do
             button.TextSize = useModern and 13 or 11
             button:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 10 or 8)
         end
@@ -751,7 +752,7 @@ end
 do
     local baseWidth,baseHeight = m.Size.X.Offset,m.Size.Y.Offset
     local fonts = {}
-    local emphasis = {[menuTitle]=true,[optOpenB]=true,[customB]=true,[configB]=true,[tB]=true,[stAutoB]=true,[mSendB]=true,[mTakeB]=true}
+    local emphasis = {[menuTitle]=true,[optOpenB]=true,[customB]=true,[configB]=true,[openAfk]=true,[tB]=true,[stAutoB]=true,[mSendB]=true,[mTakeB]=true}
     local function adaptFields(parent,width,height)
         for _,object in ipairs(parent:GetChildren()) do
             if not object:IsA("GuiObject") then continue end
@@ -1119,7 +1120,6 @@ end
 
 local exitAfkMode
 do
-    local openAfk = bt(p7,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,200),cd,8,1)
     local overlay = ui("Frame", {
         Size=u(1,0,1,0), BackgroundColor3=bg, BackgroundTransparency=0.15,
         Visible=false, Active=true, ZIndex=30, BorderSizePixel=0,
