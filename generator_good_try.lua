@@ -1,5 +1,17 @@
 local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("ReplicatedStorage"),game:GetService("CoreGui"),game:GetService("Players"),game:GetService("VirtualUser"),game:GetService("Lighting"),game:GetService("RunService")
 local plr=P.LocalPlayer
+local Http=game:GetService("HttpService")
+local configPath="GGT/config_"..tostring(plr.UserId)..".json"
+local savedConfig={}
+if type(readfile)=="function" then
+    local ok,loaded=pcall(function() return Http:JSONDecode(readfile(configPath)) end)
+    if ok and type(loaded)=="table" and loaded.version==1 then savedConfig=loaded end
+end
+local function configNumber(value,default,minimum,maximum)
+    if type(value)~="number" or value~=value then return default end
+    return math.clamp(value,minimum,maximum)
+end
+local saveConfig
 local Rem=R:WaitForChild("Remotes")
 local GM,ML,MB,PS,ST=Rem.GetMarket,Rem.MarketLot,Rem.MarketBuy,Rem.Post,Rem.Stall
 if C:FindFirstChild("ZS") then C.ZS:Destroy() end
@@ -48,9 +60,16 @@ local p5=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTrans
 local p6=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local p7=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local pgs,tbs={p1,p4,p6,p5,p7},{}
+local function showPage(index)
+    for i,tab in ipairs(tbs) do
+        pgs[i].Visible = i==index
+        tab.BackgroundColor3 = i==index and ac or cd
+    end
+end
 for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","Настройки"}) do
     local tb=bt(sdF,nm,u(1,-12,0,28),u(0,6,0,8+(i-1)*34),i==1 and ac or cd,7)
-    tbs[i]=tb tb.MouseButton1Click:Connect(function() for j=1,5 do pgs[j].Visible=j==i tbs[j].BackgroundColor3=j==i and ac or cd end end)
+    tbs[i]=tb
+    tb.Activated:Connect(function() showPage(i) end)
 end
 
 local prof=ui("Frame",{Size=u(1,-12,0,40),Position=u(0,6,1,-46),BackgroundColor3=cd},sdF,7,1)
@@ -132,13 +151,15 @@ do
 
     lb(trCard,"Фильтр ассортимента",u(1,-24,0,28),u(0,12,0,8),tx,18).TextSize = 13
     for index,filter in ipairs(filters) do
-        filter.enabled = true
+        filter.enabled = type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false
         local y = 45+(index-1)*34
         lb(trCard,filter.name,u(1,-144,0,28),u(0,12,0,y),sb)
         filter.status = lb(trCard,"—",u(0,84,0,28),u(1,-140,0,y),sb,17,Enum.TextXAlignment.Right)
-        local toggle = bt(trCard,"ON",u(0,40,0,26),u(1,-50,0,y+1),ac,6,1)
+        local toggle = bt(trCard,filter.enabled and "ON" or "OFF",u(0,40,0,26),u(1,-50,0,y+1),filter.enabled and ac or bg,6,1)
         toggle.Activated:Connect(function()
             filter.enabled = not filter.enabled
+            if type(savedConfig.traderFilters)~="table" then savedConfig.traderFilters={true,true} end
+            savedConfig.traderFilters[index]=filter.enabled
             toggle.Text = filter.enabled and "ON" or "OFF"
             toggle.BackgroundColor3 = filter.enabled and ac or bg
         end)
@@ -193,7 +214,10 @@ end
 
 local mC1=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
 lb(mC1,"Юзернейм в Roblox:",u(1,-14,0,15),u(0,8,0,3),sb,17)
-local idBox=bx(mC1,"",u(1,-16,0,24),u(0,8,0,20)) idBox.PlaceholderText="Введи юзернейм..."
+local rememberedNick=type(savedConfig.recipient)=="string" and savedConfig.recipient:match("^[%w_]+$") or ""
+if #rememberedNick>20 then rememberedNick="" end
+local idBox=bx(mC1,rememberedNick,u(1,-109,0,24),u(0,8,0,20)) idBox.PlaceholderText="Введи юзернейм..."
+local rememberB=bt(mC1,"Запомнить",u(0,85,0,24),u(1,-93,0,20),cd,6,1)
 
 local mC2=ui("Frame",{Size=u(1,0,0,50),Position=u(0,0,0,56),BackgroundColor3=cd},p5,8,1)
 lb(mC2,"Сумма (₽) и номера:",u(1,-14,0,15),u(0,8,0,3),sb,17)
@@ -202,6 +226,22 @@ local pickB=bt(mC2,"Номера: 0",u(0.46,0,0,24),u(0.52,-4,0,20),bg,6,1)
 
 local mStC=ui("Frame",{Size=u(1,0,0,115),Position=u(0,0,0,112),BackgroundColor3=cd},p5,8,1)
 local mSt=lb(mStC,"Впиши сумму или выбери номера, затем нажми Отправить.",u(1,-16,0,22),u(0,8,0,4),sb,17) mSt.TextWrapped=true
+rememberB.Activated:Connect(function()
+    local nickname = idBox.Text:match("^%s*(.-)%s*$")
+    if nickname~="" and (#nickname>20 or not nickname:match("^[%w_]+$")) then
+        mSt.Text="Ник может содержать до 20 латинских букв, цифр и подчёркиваний."
+        return
+    end
+    local previous = rememberedNick
+    rememberedNick = nickname
+    if saveConfig and saveConfig() then
+        idBox.Text = nickname
+        mSt.Text = nickname=="" and "Сохранённый ник удалён." or "Получатель сохранён: "..nickname
+    else
+        rememberedNick = previous
+        mSt.Text="Не удалось записать конфиг в папку GGT."
+    end
+end)
 local mLogScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-30),Position=u(0,6,0,26),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,0)},mStC)
 local mSendB=bt(p5,"ОТПРАВИТЬ",u(0.48,0,0,38),u(0,0,1,-38),ac,8)
 local mTakeB=bt(p5,"АВТО-ПРИЁМ: ВЫКЛ",u(0.49,0,0,38),u(0.51,0,1,-38),cd,8,1)
@@ -230,11 +270,11 @@ local afkB=bt(setR2,"ON",u(0,46,0,24),u(1,-54,0,7),ac,6,1)
 
 local setR3=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,80),BackgroundColor3=cd},p7,8,1)
 lb(setR3,"Пауза проверки почты (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
-local mailDelayBox=bx(setR3,"4",u(0,46,0,24),u(1,-54,0,7))
+local mailDelayBox=bx(setR3,tostring(configNumber(savedConfig.mailDelay,4,2,3600)),u(0,46,0,24),u(1,-54,0,7))
 
 local setR4=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,120),BackgroundColor3=cd},p7,8,1)
 lb(setR4,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
-local stallDelayBox=bx(setR4,"2",u(0,46,0,24),u(1,-54,0,7))
+local stallDelayBox=bx(setR4,tostring(configNumber(savedConfig.stallDelay,2,1,3600)),u(0,46,0,24),u(1,-54,0,7))
 
 do
     local upkeepInterval = 60 * 60
@@ -269,8 +309,16 @@ do
 end
 
 local optCfg={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
-local optOpenB=bt(p7,"ОПТИМИЗАЦИЯ",u(0.58,-4,0,38),u(0,0,1,-38),ac,8)
-local customB=bt(p7,"КАСТОМ",u(0.42,-4,0,38),u(0.58,4,1,-38),cd,8,1)
+if type(savedConfig.optimization)=="table" then
+    for key,default in pairs(optCfg) do
+        local value = savedConfig.optimization[key]
+        if type(default)=="boolean" and type(value)=="boolean" then optCfg[key]=value end
+    end
+    optCfg.fps=math.floor(configNumber(savedConfig.optimization.fps,30,0,1000))
+end
+local optOpenB=bt(p7,"ОПТИМИЗАЦИЯ",u(0.42,-4,0,38),u(0,0,1,-38),ac,8)
+local customB=bt(p7,"КАСТОМ",u(0.28,-6,0,38),u(0.42,3,1,-38),cd,8,1)
+local configB=bt(p7,"КОНФИГ",u(0.3,-4,0,38),u(0.7,4,1,-38),cd,8,1)
 
 local optModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,8,1)
 local optScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-44),Position=u(0,6,0,6),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,272),ZIndex=9},optModal)
@@ -292,13 +340,14 @@ for idx,it in ipairs(optItems) do
 end
 local fpsRow=ui("Frame",{Size=u(1,-6,0,30),Position=u(0,2,0,238),BackgroundColor3=cd},optScroll,6,1) fpsRow.ZIndex=9
 lb(fpsRow,"Лимит FPS (0 = без лим.):",u(0.65,0,1,0),u(0,8,0,0),tx,17).ZIndex=10
-local fpsBox=bx(fpsRow,"30",u(0,68,0,22),u(1,-74,0,4)) fpsBox.ZIndex=10
+local fpsBox=bx(fpsRow,tostring(optCfg.fps),u(0,68,0,22),u(1,-74,0,4)) fpsBox.ZIndex=10
 
 local optApplyB=bt(optModal,"ПРИМЕНИТЬ",u(0.48,0,0,30),u(0,8,1,-36),ac,6) optApplyB.ZIndex=9
 local optCloseB=bt(optModal,"Закрыть",u(0.46,0,0,30),u(0.52,0,1,-36),cd,6,1) optCloseB.ZIndex=9
 local pModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p5,8,1)
 local pScroll=ui("ScrollingFrame",{Size=u(1,-10,1,-42),Position=u(0,5,0,5),BackgroundTransparency=1,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=9},pModal)
-local pDoneB=bt(pModal,"Готово",u(1,-10,0,28),u(0,5,1,-33),ac,6) pDoneB.ZIndex=9
+local pAllB=bt(pModal,"Выбрать все",u(0.55,-8,0,28),u(0,5,1,-33),cd,6) pAllB.ZIndex=9
+local pDoneB=bt(pModal,"Готово",u(0.45,-7,0,28),u(0.55,2,1,-33),ac,6) pDoneB.ZIndex=9
 
 local rarStyle={RARE={n="Редкий",c="#419BFF"},EPIC={n="Эпический",c="#9B55FF"},MYTHIC={n="Мифический",c="#EE4844"},LEGENDARY={n="Легендарный",c="#FFB932"},ORIGINAL={n="Оригинал",c="#38BDF8"}}
 local function fmtNum(n) local s=tostring(math.floor(tonumber(n) or 0)) return s:reverse():gsub("(%d%d%d)","%1 "):reverse():gsub("^ ","") end
@@ -461,12 +510,23 @@ pickB.MouseButton1Click:Connect(function()
     end
     pModal.Visible=true
 end)
+pAllB.Activated:Connect(function()
+    if refreshModal()==0 then return end
+    for _,item in ipairs(pickerItems) do selPlates[item.id]=true end
+    updPickTxt()
+    renderPlateRows()
+end)
 pDoneB.MouseButton1Click:Connect(function() pModal.Visible=false updPickTxt() end)
 
 local run,takeRun,stRun,okC,lN=false,false,false,0,0
 local sniperSession=0
 local takenPosts={}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
+if type(savedConfig.menuKey)=="string" then
+    local ok,key = pcall(function() return Enum.KeyCode[savedConfig.menuKey] end)
+    if ok and key and key~=Enum.KeyCode.Unknown then menuKey=key end
+end
+bindB.Text=menuKey.Name
 
 local originalProperties,originalGuiProperties={},{}
 local sceneConnections,guiConnections={},{}
@@ -663,7 +723,7 @@ do
         end
         mB.Size,cB.Size = u(0,useModern and 28 or 24,0,useModern and 26 or 22),u(0,useModern and 28 or 24,0,useModern and 26 or 22)
         mB.Position,cB.Position = u(1,useModern and -68 or -54,0,useModern and 4 or 6),u(1,useModern and -34 or -27,0,useModern and 4 or 6)
-        for _,button in ipairs({optOpenB,customB,tB,stAutoB,mSendB,mTakeB}) do
+        for _,button in ipairs({optOpenB,customB,configB,tB,stAutoB,mSendB,mTakeB}) do
             button.TextSize = useModern and 13 or 11
             button:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 10 or 8)
         end
@@ -683,12 +743,15 @@ do
     modern.Activated:Connect(function() setTheme(true) end)
     back.Activated:Connect(function() modal.Visible = false end)
     setTheme(false)
+    if savedConfig.modern==true then
+        task.defer(function() if g.Parent then setTheme(true) end end)
+    end
 end
 
 do
     local baseWidth,baseHeight = m.Size.X.Offset,m.Size.Y.Offset
     local fonts = {}
-    local emphasis = {[menuTitle]=true,[optOpenB]=true,[customB]=true,[tB]=true,[stAutoB]=true,[mSendB]=true,[mTakeB]=true}
+    local emphasis = {[menuTitle]=true,[optOpenB]=true,[customB]=true,[configB]=true,[tB]=true,[stAutoB]=true,[mSendB]=true,[mTakeB]=true}
     local function adaptFields(parent,width,height)
         for _,object in ipairs(parent:GetChildren()) do
             if not object:IsA("GuiObject") then continue end
@@ -1368,6 +1431,48 @@ g.Destroying:Connect(function()
     idleConnection:Disconnect()
     hotkey:Disconnect()
 end)
+
+do
+    local width=configNumber(savedConfig.width,435,435,1600)
+    local height=configNumber(savedConfig.height,320,320,1000)
+    m.Size=u(0,width,0,height)
+    m.Position=u(0.5,-math.floor(width/2),0.3,0)
+
+    saveConfig=function()
+        if type(writefile)~="function" then return false end
+        local entry={
+            version=1, recipient=rememberedNick, modern=modernTheme, menuKey=menuKey.Name,
+            width=math.clamp(m.Size.X.Offset,435,1600), height=math.clamp(m.Size.Y.Offset,320,1000),
+            mailDelay=configNumber(tonumber(mailDelayBox.Text),4,2,3600),
+            stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
+            optimization=table.clone(optCfg),
+            traderFilters={true,true},
+        }
+        if type(savedConfig.traderFilters)=="table" then
+            for i=1,2 do entry.traderFilters[i]=savedConfig.traderFilters[i]~=false end
+        end
+        if type(makefolder)=="function" then pcall(makefolder,"GGT") end
+        return pcall(function() writefile(configPath,Http:JSONEncode(entry)) end)
+    end
+
+    local configNotice=0
+    configB.Activated:Connect(function()
+        configNotice+=1
+        local notice=configNotice
+        configB.Text=saveConfig() and "СОХРАНЕНО" or "ОШИБКА"
+        task.delay(2,function()
+            if g.Parent and notice==configNotice then configB.Text="КОНФИГ" end
+        end)
+    end)
+
+    local traderArrival=workspace.ChildAdded:Connect(function(child)
+        if child.Name~="TraderWalker" or (not m.Visible and not oB.Visible) then return end
+        showPage(2)
+        tog(true)
+    end)
+    g.Destroying:Connect(function() traderArrival:Disconnect() end)
+end
+
 local function formatBoxPost(item)
     local sender=tostring(item.fromName or item.senderName or item.from or "Игрок")
     local money=tonumber(item.money or item.cash or item.amount or 0) or 0
