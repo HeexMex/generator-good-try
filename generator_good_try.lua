@@ -133,6 +133,7 @@ for i,r in ipairs(rars) do
     r.box=bx(rw,r.def,u(1,-168,0,23),u(0,112,0,5))
     r.box.FocusLost:Connect(function() local v=parseM(r.box.Text) if v>0 then r.box.Text=tostring(v) bl={} end end)
     local sw=bt(rw,"OFF",u(0,44,0,23),u(1,-50,0,5),bg,6,1)
+    r.toggle=sw
     sw.MouseButton1Click:Connect(function() r.on=not r.on sw.BackgroundColor3=r.on and ac or bg sw.Text=r.on and "ON" or "OFF" end)
 end
 
@@ -236,49 +237,119 @@ do
     end)
 end
 
-local mC1=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
-lb(mC1,"Юзернейм в Roblox:",u(1,-14,0,15),u(0,8,0,3),sb,17)
-local rememberedNick=configNickname(savedConfig.recipient)
-local idBox=bx(mC1,rememberedNick,u(1,-109,0,24),u(0,8,0,20)) idBox.PlaceholderText="Введи юзернейм..."
-local rememberB=bt(mC1,"Запомнить",u(0,85,0,24),u(1,-93,0,20),cd,6,1)
+local idBox,sumBox,pickB,mSt,mLogScroll
+local recipientBook={primary="",names={}}
+do
+    local recipient=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
+    lb(recipient,"Юзернейм в Roblox:",u(1,-14,0,15),u(0,8,0,3),sb,17)
+    idBox=bx(recipient,"",u(1,-109,0,24),u(0,8,0,20))
+    idBox.PlaceholderText="Введи юзернейм..."
+    local rememberB=bt(recipient,"Запомнить",u(0,85,0,24),u(1,-93,0,20),cd,6,1)
 
-local mC2=ui("Frame",{Size=u(1,0,0,50),Position=u(0,0,0,56),BackgroundColor3=cd},p5,8,1)
-lb(mC2,"Сумма (₽) и номера:",u(1,-14,0,15),u(0,8,0,3),sb,17)
-local sumBox=bx(mC2,"0",u(0.48,0,0,24),u(0,8,0,20))
-local pickB=bt(mC2,"Номера: 0",u(0.46,0,0,24),u(0.52,-4,0,20),bg,6,1)
+    local attachments=ui("Frame",{Size=u(1,0,0,50),Position=u(0,0,0,56),BackgroundColor3=cd},p5,8,1)
+    lb(attachments,"Сумма (₽) и номера:",u(1,-14,0,15),u(0,8,0,3),sb,17)
+    sumBox=bx(attachments,"0",u(0.48,0,0,24),u(0,8,0,20))
+    pickB=bt(attachments,"Номера: 0",u(0.46,0,0,24),u(0.52,-4,0,20),bg,6,1)
 
-local mStC=ui("Frame",{Size=u(1,0,0,115),Position=u(0,0,0,112),BackgroundColor3=cd},p5,8,1)
-local mSt=lb(mStC,"Впиши сумму или выбери номера, затем нажми Отправить.",u(1,-16,0,22),u(0,8,0,4),sb,17) mSt.TextWrapped=true
-rememberB.Activated:Connect(function()
-    local nickname = idBox.Text:match("^%s*(.-)%s*$")
-    if nickname~="" and (#nickname>20 or not nickname:match("^[%w_]+$")) then
-        mSt.Text="Ник может содержать до 20 латинских букв, цифр и подчёркиваний."
-        return
+    local history=ui("Frame",{Size=u(1,0,0,76),Position=u(0,0,0,112),BackgroundColor3=cd},p5,8,1)
+    mSt=lb(history,"Впиши сумму или выбери номера, затем нажми Отправить.",u(1,-16,0,22),u(0,8,0,4),sb,17)
+    mSt.TextWrapped=true
+    mLogScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-30),Position=u(0,6,0,26),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,0)},history)
+
+    local caption=lb(p5,"Быстрый набор",u(1,-16,0,15),u(0,8,0,190),sb,17)
+    local quick=ui("ScrollingFrame",{
+        Size=u(1,-8,0,27),Position=u(0,4,0,207),BackgroundTransparency=1,BorderSizePixel=0,
+        ScrollingDirection=Enum.ScrollingDirection.X,AutomaticCanvasSize=Enum.AutomaticSize.X,
+        ScrollBarThickness=3,CanvasSize=u(0,0,0,0),
+    },p5)
+    local list=Instance.new("UIListLayout",quick)
+    list.FillDirection,list.SortOrder,list.Padding=Enum.FillDirection.Horizontal,Enum.SortOrder.LayoutOrder,UDim.new(0,6)
+
+    local function normalizedNames(primary,otherNames)
+        local names,seen={},{}
+        local function add(value)
+            local nickname=configNickname(value)
+            local key=nickname:lower()
+            if nickname~="" and not seen[key] then
+                seen[key]=true
+                table.insert(names,nickname)
+            end
+        end
+        add(primary)
+        if type(otherNames)=="table" then
+            for _,value in ipairs(otherNames) do add(value) end
+        end
+        return names
     end
-    local previous = rememberedNick
-    rememberedNick = nickname
-    if saveConfig and saveConfig(true) then
-        idBox.Text = nickname
-        mSt.Text = nickname=="" and "Сохранённый ник удалён." or "Получатель сохранён: "..nickname
-    else
-        rememberedNick = previous
-        mSt.Text="Не удалось записать конфиг в папку GGT."
+
+    local function refreshQuick()
+        for _,child in ipairs(quick:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        local hasNames=#recipientBook.names>0
+        caption.Visible,quick.Visible=hasNames,hasNames
+        for index,nickname in ipairs(recipientBook.names) do
+            local chip=bt(quick,nickname,u(0,math.max(70,#nickname*8+16),1,-4),u(0,0,0,0),cd,6,1)
+            chip.LayoutOrder=index
+            chip.Activated:Connect(function() idBox.Text=nickname end)
+        end
     end
-end)
-local mLogScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-30),Position=u(0,6,0,26),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,0)},mStC)
+
+    function recipientBook.load(config)
+        recipientBook.primary=configNickname(config.recipient)
+        recipientBook.names=normalizedNames(recipientBook.primary,config.recipients)
+        idBox.Text=recipientBook.primary
+        refreshQuick()
+    end
+
+    rememberB.Activated:Connect(function()
+        local nickname=idBox.Text:match("^%s*(.-)%s*$")
+        if nickname~="" and configNickname(nickname)=="" then
+            mSt.Text="Ник может содержать до 20 латинских букв, цифр и подчёркиваний."
+            return
+        end
+        local previous,oldNames=recipientBook.primary,recipientBook.names
+        recipientBook.primary=nickname
+        recipientBook.names=normalizedNames(nickname,oldNames)
+        if not saveConfig or not saveConfig(true) then
+            recipientBook.primary,recipientBook.names=previous,oldNames
+            mSt.Text="Не удалось записать конфиг в папку GGT."
+            return
+        end
+        idBox.Text=nickname
+        refreshQuick()
+        mSt.Text=nickname=="" and "Получатель по умолчанию сброшен." or "Получатель добавлен в быстрый набор."
+    end)
+    recipientBook.load(savedConfig)
+end
 local mSendB=bt(p5,"ОТПРАВИТЬ",u(0.48,0,0,38),u(0,0,1,-38),ac,8)
 local mTakeB=bt(p5,"АВТО-ПРИЁМ: ВЫКЛ",u(0.49,0,0,38),u(0.51,0,1,-38),cd,8,1)
 
 local stCard=ui("Frame",{Size=u(1,0,0,185),BackgroundColor3=cd},p6,8,1)
 lb(stCard,"Уровни зелий для покупки:",u(1,-16,0,22),u(0,8,0,4),sb,17)
 local stallLevels={true,true,true,true}
-for i=1,4 do
-    local button=bt(stCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
-    button.MouseButton1Click:Connect(function()
-        stallLevels[i]=not stallLevels[i]
+local applyStallLevels
+do
+    local buttons={}
+    local function showLevel(i)
+        local button=buttons[i]
         button.Text=tostring(i)..(stallLevels[i] and ": ON" or ": OFF")
         button.BackgroundColor3=stallLevels[i] and ac or bg
-    end)
+    end
+    applyStallLevels=function(levels)
+        for i=1,4 do
+            stallLevels[i]=type(levels)~="table" or levels[i]~=false
+            showLevel(i)
+        end
+    end
+    for i=1,4 do
+        local button=bt(stCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
+        buttons[i]=button
+        button.Activated:Connect(function()
+            stallLevels[i]=not stallLevels[i]
+            showLevel(i)
+        end)
+    end
 end
 local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) stInfo.TextWrapped,stInfo.TextYAlignment=true,0
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
@@ -439,7 +510,7 @@ local function addMailLog(txt,tipText)
     local l=lb(entry,txt,u(1,-10,1,0),u(0,5,0,0),tx,17) l.TextTruncate=Enum.TextTruncate.AtEnd
     if tipText and tipText~="" then bindTip(entry,tipText,44) end
     mLogScroll.CanvasSize=u(0,0,0,mailLogCount*25)
-    mLogScroll.CanvasPosition=Vector2.new(0,math.max(0,mailLogCount*25-85))
+    mLogScroll.CanvasPosition=Vector2.new(0,math.max(0,mailLogCount*25-mLogScroll.AbsoluteWindowSize.Y))
 end
 
 local selPlates,sentPlates={},{}
@@ -1500,20 +1571,64 @@ do
     m.Size=u(0,width,0,height)
     m.Position=u(0.5,-math.floor(width/2),0.3,0)
 
+    local function applyTabFields(config)
+        local market=type(config.market)=="table" and config.market or {}
+        lBox.Text=tostring(math.floor(configNumber(market.limit,0,0,1e9)))
+        dBox.Text=tostring(configNumber(market.delay,1.5,1.4,3600))
+        curSort=sorts[2]
+        for _,sort in ipairs(sorts) do
+            if sort.id==market.sort then curSort=sort break end
+        end
+        sB.Text=curSort.n
+        for i,sort in ipairs(sorts) do
+            sBtns[i].BackgroundColor3=sort.id==curSort.id and ac or cd
+        end
+        local byRarity=type(market.rarities)=="table" and market.rarities or {}
+        for _,rarity in ipairs(rars) do
+            local rule=byRarity[rarity.id]
+            local defaultPrice=tonumber(rarity.def)
+            local price=defaultPrice
+            rarity.on=false
+            if type(rule)=="table" then
+                price=math.floor(configNumber(rule.price,defaultPrice,0,1e15))
+                rarity.on=rule.enabled==true
+            end
+            rarity.box.Text=tostring(price)
+            rarity.toggle.Text=rarity.on and "ON" or "OFF"
+            rarity.toggle.BackgroundColor3=rarity.on and ac or bg
+        end
+        bl={}
+        applyStallLevels(config.stallLevels)
+        sumBox.Text=tostring(math.floor(configNumber(config.mailAmount,0,0,1e15)))
+    end
+
+    applyTabFields(savedConfig)
+
     saveConfig=function(recipientOnly)
         if type(writefile)~="function" then return false end
         local entry=recipientOnly and readConfig()
         if entry then
-            entry.recipient=rememberedNick
+            entry.recipient=recipientBook.primary
+            entry.recipients=table.clone(recipientBook.names)
         else
             entry={
-                version=1, recipient=rememberedNick, modern=modernTheme, menuKey=menuKey.Name,
+                version=1, recipient=recipientBook.primary, recipients=table.clone(recipientBook.names),
+                modern=modernTheme, menuKey=menuKey.Name,
                 width=math.clamp(m.Size.X.Offset,435,1600), height=math.clamp(m.Size.Y.Offset,320,1000),
                 mailDelay=configNumber(tonumber(mailDelayBox.Text),4,2,3600),
                 stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
                 optimization=table.clone(optCfg),
                 traderFilters={true,true},
+                mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
+                stallLevels=table.clone(stallLevels),
+                market={
+                    sort=curSort.id, limit=configNumber(tonumber((lBox.Text:gsub("%D",""))),0,0,1e9),
+                    delay=configNumber(tonumber(dBox.Text),1.5,1.4,3600), rarities={},
+                },
             }
+            for _,rarity in ipairs(rars) do
+                entry.market.rarities[rarity.id]={enabled=rarity.on,price=configNumber(parseM(rarity.box.Text),0,0,1e15)}
+            end
             if type(savedConfig.traderFilters)=="table" then
                 for i=1,2 do entry.traderFilters[i]=savedConfig.traderFilters[i]~=false end
             end
@@ -1562,9 +1677,9 @@ do
         bindB.Text=menuKey.Name
         mailDelayBox.Text=tostring(configNumber(config.mailDelay,4,2,3600))
         stallDelayBox.Text=tostring(configNumber(config.stallDelay,2,1,3600))
-        rememberedNick=configNickname(config.recipient)
-        idBox.Text=rememberedNick
+        recipientBook.load(config)
         refreshTraderFilters()
+        applyTabFields(config)
         optCfg=configOptimization(config.optimization)
         for key,button in pairs(optBtns) do
             button.Text=optCfg[key] and "ON" or "OFF"
