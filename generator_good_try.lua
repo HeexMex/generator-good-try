@@ -7,11 +7,12 @@ if C:FindFirstChild("ZS") then C.ZS:Destroy() end
 local g=Instance.new("ScreenGui",C) g.Name,g.ResetOnSpawn,g.IgnoreGuiInset="ZS",false,true
 local u,c=UDim2.new,Color3.fromRGB
 local bg,sd,cd,ac,tx,sb=c(15,15,21),c(21,21,29),c(27,27,37),c(130,85,255),c(242,242,247),c(145,145,165)
+local strokeColor,danger=c(44,44,58),c(200,55,65)
 
 local function ui(t,p,par,r,s)
     local o=Instance.new(t,par) for k,v in pairs(p) do o[k]=v end
     if r then Instance.new("UICorner",o).CornerRadius=UDim.new(0,r) end
-    if s then local k=Instance.new("UIStroke",o) k.Color,k.Thickness,k.ApplyStrokeMode=c(44,44,58),1,Enum.ApplyStrokeMode.Border end
+    if s then local k=Instance.new("UIStroke",o) k.Color,k.Thickness,k.ApplyStrokeMode=strokeColor,1,Enum.ApplyStrokeMode.Border end
     return o
 end
 local function lb(par,t,sz,ps,cl,f,xa) return ui("TextLabel",{Size=sz,Position=ps,BackgroundTransparency=1,Text=t,TextColor3=cl or tx,Font=f or 18,TextSize=11,TextXAlignment=xa or 0},par) end
@@ -29,9 +30,8 @@ local function parseM(str)
 end
 local oB=bt(g,"Меню",u(0,86,0,28),u(0,15,0.5,-14),sd,8,1) oB.Visible=false
 local m=ui("Frame",{Size=u(0,435,0,320),Position=u(0.5,-217,0.3,0),BackgroundColor3=bg},g,10,1)
-local menuScale=Instance.new("UIScale",m)
 local tp=ui("Frame",{Size=u(1,0,0,34),BackgroundColor3=sd},m,10)
-lb(tp,"Меню",u(0,140,1,0),u(0,12,0,0),ac,18)
+local menuTitle=lb(tp,"Меню",u(0,140,1,0),u(0,12,0,0),ac,18)
 local mB=bt(tp,"—",u(0,24,0,22),u(1,-54,0,6),cd)
 local cB=bt(tp,"X",u(0,24,0,22),u(1,-27,0,6),c(200,55,65))
 
@@ -105,7 +105,7 @@ end
 local stC=ui("Frame",{Size=u(1,0,0,44),Position=u(0,0,0,192),BackgroundColor3=cd},p1,8,1)
 local st=lb(stC,"Ожидание | Успешных покупок: 0",u(1,-14,1,-8),u(0,8,0,4),tx,17) st.TextWrapped,st.TextYAlignment=true,0
 local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
-local trCard=ui("Frame",{Size=u(1,0,0,185),BackgroundColor3=cd},p4,8,1)
+local trCard=ui("Frame",{Size=u(1,0,0,228),BackgroundColor3=cd},p4,8,1)
 lb(trCard,"Покупать слоты торгаша:",u(1,-16,0,22),u(0,8,0,4),sb,17)
 local traderEnabled={true,true,true,true}
 for i=1,4 do
@@ -116,8 +116,87 @@ for i=1,4 do
         button.BackgroundColor3=traderEnabled[i] and ac or bg
     end)
 end
-local trSt=lb(trCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) trSt.TextWrapped,trSt.TextYAlignment=true,0
+local trSt=lb(trCard,"Статус: ВЫКЛ",u(1,-16,0,38),u(0,8,0,184),tx,17) trSt.TextWrapped,trSt.TextYAlignment=true,0
 local trB=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
+
+do
+    local function normalizeItemName(value)
+        value = value:gsub("<[^>]*>", ""):gsub(utf8.char(160), " "):gsub(utf8.char(8239), " ")
+        return value:lower():gsub(utf8.charpattern,function(letter)
+            local code = utf8.codepoint(letter)
+            if code >= 0x410 and code <= 0x42F then return utf8.char(code+32) end
+            if code == 0x401 then return "ё" end
+            return letter
+        end)
+    end
+
+    local filters = {
+        {name="Ролл удачи ×1M", matches=function(name)
+            if not name:find("ролл",1,true) or not name:find("удачи",1,true) then return false end
+            local scale = name:gsub("1%s*м", "1m")
+            return scale:find("%f[%w]1%s*m%f[%W]") or scale:find("%f[%d]1%s*000%s*000%f[%D]")
+        end},
+        {name="Эликсир / зелье V тира", matches=function(name)
+            if not name:find("эликсир",1,true) and not name:find("зелье",1,true) then return false end
+            return name:find("%f[%w]v%f[%W]") or name:find("%f[%d]5%s*тир")
+                or name:find("тир%s+5%f[%D]") or name:find("%s5%s*$")
+        end},
+    }
+
+    lb(trCard,"Фильтр ассортимента",u(1,-16,0,19),u(0,8,0,63),tx,18)
+    for index,filter in ipairs(filters) do
+        filter.enabled = true
+        local y = 84+(index-1)*27
+        lb(trCard,filter.name,u(1,-104,0,23),u(0,8,0,y),sb)
+        filter.status = lb(trCard,"—",u(0,48,0,23),u(1,-101,0,y),sb,17,Enum.TextXAlignment.Right)
+        local toggle = bt(trCard,"ON",u(0,40,0,23),u(1,-48,0,y),ac,6,1)
+        toggle.Activated:Connect(function()
+            filter.enabled = not filter.enabled
+            toggle.Text = filter.enabled and "ON" or "OFF"
+            toggle.BackgroundColor3 = filter.enabled and ac or bg
+        end)
+    end
+    local hint = lb(trCard,"Открой окно торговца, чтобы увидеть совпадения.",u(1,-16,0,32),u(0,8,0,145),sb,17)
+    hint.TextWrapped = true
+
+    local function readAssortment()
+        local pg = plr:FindFirstChild("PlayerGui")
+        local plates = pg and pg:FindFirstChild("PlatesUI")
+        local panel = plates and plates:FindFirstChild("TraderPanel")
+        if not panel or not panel.Visible then return end
+
+        local matches = {}
+        for _,label in ipairs(panel:GetDescendants()) do
+            if not label:IsA("TextLabel") or not label.Visible then continue end
+            local parent = label.Parent
+            while parent ~= panel and (not parent:IsA("GuiObject") or parent.Visible) do
+                parent = parent.Parent
+            end
+            if parent ~= panel then continue end
+            local name = normalizeItemName(label.Text)
+            for index,filter in ipairs(filters) do
+                if filter.enabled and filter.matches(name) then matches[index] = true end
+            end
+        end
+        return matches
+    end
+
+    task.spawn(function()
+        while g.Parent do
+            if m.Visible and p4.Visible then
+                local matches = readAssortment()
+                hint.Text = matches and "Совпадения в открытом ассортименте."
+                    or "Открой окно торговца, чтобы увидеть совпадения."
+                for index,filter in ipairs(filters) do
+                    local found = matches and matches[index]
+                    filter.status.Text = filter.enabled and matches and (found and "Найден" or "Нет") or "—"
+                    filter.status.TextColor3 = found and c(74,222,128) or sb
+                end
+            end
+            task.wait(0.35)
+        end
+    end)
+end
 
 local mC1=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
 lb(mC1,"Юзернейм в Roblox:",u(1,-14,0,15),u(0,8,0,3),sb,17)
@@ -197,7 +276,8 @@ do
 end
 
 local optCfg={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
-local optOpenB=bt(p7,"НАСТРОЙКА ОПТИМИЗАЦИИ",u(1,0,0,38),u(0,0,1,-38),ac,8)
+local optOpenB=bt(p7,"ОПТИМИЗАЦИЯ",u(0.58,-4,0,38),u(0,0,1,-38),ac,8)
+local customB=bt(p7,"КАСТОМ",u(0.42,-4,0,38),u(0.58,4,1,-38),cd,8,1)
 
 local optModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,8,1)
 local optScroll=ui("ScrollingFrame",{Size=u(1,-12,1,-44),Position=u(0,6,0,6),BackgroundTransparency=1,ScrollBarThickness=3,CanvasSize=u(0,0,0,272),ZIndex=9},optModal)
@@ -426,7 +506,142 @@ optApplyB.MouseButton1Click:Connect(function()
     optModal.Visible=false
 end)
 
-local function tog(s) if s==nil then s=not m.Visible end m.Visible,oB.Visible=s,not s end
+local modernTheme,menuAnimating = false,false
+do
+    local classicColors = {bg,sd,cd,ac,tx,sb,strokeColor,danger}
+    local modernColors = {c(13,18,31),c(19,27,44),c(29,40,62),c(75,104,213),c(244,247,255),c(157,175,205),c(54,69,101),c(173,58,79)}
+    local modal = ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,10,1)
+    local title = lb(modal,"Оформление меню",u(1,-24,0,34),u(0,12,0,8),tx,18)
+    title.TextSize,title.ZIndex = 15,9
+    local classic = bt(modal,"Старый дизайн",u(1,-24,0,44),u(0,12,0,54),cd,8,1)
+    local modern = bt(modal,"Новый дизайн",u(1,-24,0,44),u(0,12,0,106),ac,8,1)
+    local back = bt(modal,"Готово",u(1,-24,0,36),u(0,12,1,-48),cd,8,1)
+    classic.ZIndex,modern.ZIndex,back.ZIndex = 9,9,9
+    local headerTint = Instance.new("UIGradient",tp)
+    headerTint.Color = ColorSequence.new(c(255,255,255),c(144,169,231))
+
+    local function setTheme(useModern)
+        local from,to = classicColors,modernColors
+        if not useModern then from,to = modernColors,classicColors end
+        if modernTheme ~= useModern then
+            local function recolor(object,property)
+                for index,color in ipairs(from) do
+                    if object[property] == color then
+                        object[property] = to[index]
+                        break
+                    end
+                end
+            end
+            for _,object in ipairs(g:GetDescendants()) do
+                if object:IsA("GuiObject") then recolor(object,"BackgroundColor3") end
+                if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+                    recolor(object,"TextColor3")
+                elseif object:IsA("UIStroke") then
+                    recolor(object,"Color")
+                end
+            end
+            bg,sd,cd,ac,tx,sb,strokeColor,danger = table.unpack(to)
+            modernTheme = useModern
+        end
+
+        local navWidth = useModern and 112 or 98
+        sdF.Size = u(0,navWidth,1,-34)
+        for _,page in ipairs(pgs) do
+            page.Position = u(0,navWidth+7,0,39)
+            page.Size = u(1,-navWidth-14,1,-44)
+        end
+        local navHeight = useModern and 34 or 28
+        for index,button in ipairs(tbs) do
+            button.Size = u(1,-12,0,navHeight)
+            button.Position = u(0,6,0,8+(index-1)*(navHeight+6))
+            button.TextSize = useModern and 12 or 11
+        end
+        mB.Size,cB.Size = u(0,useModern and 28 or 24,0,useModern and 26 or 22),u(0,useModern and 28 or 24,0,useModern and 26 or 22)
+        mB.Position,cB.Position = u(1,useModern and -68 or -54,0,useModern and 4 or 6),u(1,useModern and -34 or -27,0,useModern and 4 or 6)
+        for _,button in ipairs({optOpenB,customB,tB,trB,stAutoB,mSendB,mTakeB}) do
+            button.TextSize = useModern and 13 or 11
+            button:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 10 or 8)
+        end
+        m:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 14 or 10)
+        headerTint.Enabled = useModern
+        menuTitle.TextSize = useModern and 16 or 11
+        menuTitle.TextColor3 = useModern and tx or ac
+        oB.Size = useModern and u(0,104,0,34) or u(0,86,0,28)
+        oB.TextSize = useModern and 13 or 11
+        classic.BackgroundColor3 = useModern and cd or ac
+        modern.BackgroundColor3 = useModern and ac or cd
+    end
+
+    customB.Activated:Connect(function() modal.Visible = true end)
+    classic.Activated:Connect(function() setTheme(false) end)
+    modern.Activated:Connect(function() setTheme(true) end)
+    back.Activated:Connect(function() modal.Visible = false end)
+    setTheme(false)
+end
+
+local tog
+do
+    local TweenService = game:GetService("TweenService")
+    local menuOpen = true
+    local restingPosition,restingSize
+    local tween,animationId = nil,0
+
+    tog = function(open,immediate)
+        if open == nil then open = not menuOpen end
+        if open == menuOpen and not immediate then return end
+        menuOpen = open
+        animationId += 1
+        local id = animationId
+        if tween then tween:Cancel() tween = nil end
+
+        if restingPosition then
+            m.Position,m.Size = restingPosition,restingSize
+        end
+        restingPosition,restingSize = m.Position,m.Size
+        menuAnimating = false
+        m.ClipsDescendants = false
+        if not modernTheme or immediate then
+            m.Visible,oB.Visible = open,not open
+            restingPosition,restingSize = nil,nil
+            return
+        end
+
+        menuAnimating = true
+        m.ClipsDescendants = true
+        local buttonPosition,buttonSize = oB.AbsolutePosition,oB.AbsoluteSize
+        local center = buttonPosition+buttonSize/2
+        local collapsedSize = u(0,math.max(24,buttonSize.X),0,math.max(16,buttonSize.Y))
+        local collapsedPosition = u(0,buttonPosition.X,0,buttonPosition.Y)
+        local fullPosition,fullSize = restingPosition,restingSize
+        if open then m.Position,m.Size = collapsedPosition,collapsedSize end
+        m.Visible,oB.Visible = true,false
+        local fullTopLeft = open and Vector2.new(
+            g.AbsoluteSize.X*fullPosition.X.Scale+fullPosition.X.Offset,
+            g.AbsoluteSize.Y*fullPosition.Y.Scale+fullPosition.Y.Offset
+        ) or m.AbsolutePosition
+        local fullCenter = fullTopLeft+Vector2.new(fullSize.X.Offset/2,fullSize.Y.Offset/2)
+        local neckSize = Vector2.new(math.max(64,fullSize.X.Offset*0.32),math.max(32,fullSize.Y.Offset*0.65))
+        local neckCenter = center:Lerp(fullCenter,0.58)+Vector2.new(0,-14)
+
+        task.spawn(function()
+            local function step(duration,position,size,style,direction)
+                tween = TweenService:Create(m,TweenInfo.new(duration,style,direction),{Position=position,Size=size})
+                tween:Play()
+                return tween.Completed:Wait() == Enum.PlaybackState.Completed and animationId == id
+            end
+            local neck = u(0,neckCenter.X-neckSize.X/2,0,neckCenter.Y-neckSize.Y/2)
+            if not step(0.14,neck,u(0,neckSize.X,0,neckSize.Y),Enum.EasingStyle.Quad,Enum.EasingDirection.Out) then return end
+            if not step(0.2,open and fullPosition or collapsedPosition,open and fullSize or collapsedSize,
+                Enum.EasingStyle.Cubic,open and Enum.EasingDirection.Out or Enum.EasingDirection.In) then return end
+            tween = nil
+            m.Visible,oB.Visible = open,not open
+            m.Position,m.Size = fullPosition,fullSize
+            m.ClipsDescendants,menuAnimating = false,false
+            restingPosition,restingSize = nil,nil
+        end)
+    end
+    g.Destroying:Connect(function() if tween then tween:Cancel() end end)
+end
 mB.MouseButton1Click:Connect(function() tog(false) end)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
@@ -685,7 +900,39 @@ do
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
 
+    local function readBalanceLabel(label)
+        if not label or not (label:IsA("TextLabel") or label:IsA("TextButton")) then return end
+        local amountText = label.Text:gsub("<[^>]*>", ""):gsub("%s", "")
+        amountText = amountText:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
+        local currency = amountText:match("^(%d+)₽$") or amountText:match("^₽(%d+)$")
+        return tonumber(currency or amountText:match("^%d+$")), currency ~= nil
+    end
+
     local function readBalance()
+        local pg = plr:FindFirstChild("PlayerGui")
+        local plates = pg and pg:FindFirstChild("PlatesUI")
+        local dock = plates and plates:FindFirstChild("Dock")
+        local money = dock and dock:FindFirstChild("Money")
+        if money then
+            local value = readBalanceLabel(money)
+            if value ~= nil then return value end
+            if money:IsA("IntValue") or money:IsA("NumberValue") then return money.Value end
+
+            local unique, hasCurrency, conflict
+            for _,label in ipairs(money:GetDescendants()) do
+                local amount, withCurrency = readBalanceLabel(label)
+                if amount ~= nil then
+                    if withCurrency and not hasCurrency then
+                        unique,hasCurrency,conflict = amount,true,false
+                    elseif withCurrency == (hasCurrency == true) then
+                        conflict = conflict or (unique ~= nil and unique ~= amount)
+                        unique = amount
+                    end
+                end
+            end
+            if unique ~= nil and not conflict then return unique end
+        end
+
         local leaderstats = plr:FindFirstChild("leaderstats")
         for _,key in ipairs({"Money","Cash","Balance","RUB","Баланс","Деньги","₽"}) do
             local value = plr:GetAttribute(key)
@@ -694,8 +941,6 @@ do
             if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue")) then return stat.Value end
         end
 
-        local pg = plr:FindFirstChild("PlayerGui")
-        local plates = pg and pg:FindFirstChild("PlatesUI")
         local top = plates and plates:FindFirstChild("TopPanel")
         if not top then return end
 
@@ -709,20 +954,14 @@ do
         local named, currency
         local namedConflict, currencyConflict = false,false
         for _,label in ipairs(top:GetDescendants()) do
-            if label:IsA("TextLabel") or label:IsA("TextButton") then
-                local amountText = label.Text:gsub("<[^>]*>", ""):gsub("%s", "")
-                amountText = amountText:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
-                local digits = amountText:match("^(%d+)₽$") or amountText:match("^₽(%d+)$")
-                local value = digits and tonumber(digits)
-                if value and label:IsA("TextLabel") then
-                    currencyConflict = currencyConflict or (currency ~= nil and currency ~= value)
-                    currency = value
-                end
-                value = value or tonumber(amountText:match("^%d+$"))
-                if value and (isBalanceName(label.Name) or isBalanceName(label.Parent.Name)) then
-                    namedConflict = namedConflict or (named ~= nil and named ~= value)
-                    named = value
-                end
+            local value, withCurrency = readBalanceLabel(label)
+            if withCurrency and label:IsA("TextLabel") then
+                currencyConflict = currencyConflict or (currency ~= nil and currency ~= value)
+                currency = value
+            end
+            if value and (isBalanceName(label.Name) or isBalanceName(label.Parent.Name)) then
+                namedConflict = namedConflict or (named ~= nil and named ~= value)
+                named = value
             end
         end
         if named ~= nil and not namedConflict then return named end
@@ -762,7 +1001,8 @@ do
         previousOpt,previousOrder = appliedOpt,g.DisplayOrder
         startedAt = os.clock()
         tipBox.Visible = false
-        m.Visible,oB.Visible = false,false
+        tog(false,true)
+        oB.Visible = false
         g.DisplayOrder = 10000
         overlay.Visible = true
         fitCard()
@@ -781,40 +1021,46 @@ do
 end
 
 do
-    local resizeInput, resizeStart, resizeAxis, startScale
-    local width, height = m.Size.X.Offset, m.Size.Y.Offset
+    local resizeInput,resizeStart,edge,baseSize,basePosition
+    local minimumWidth,minimumHeight = m.Size.X.Offset,m.Size.Y.Offset
 
-    local function resizeHandle(size, position, axis)
-        local handle = ui("Frame", {
+    local function resizeHandle(size,position,xDirection,yDirection)
+        local handle = ui("Frame",{
             Size=size, Position=position, BackgroundTransparency=1, Active=true, ZIndex=6,
-        }, m)
+        },m)
         handle.InputBegan:Connect(function(input)
             local kind = input.UserInputType
-            if not resizeInput and (kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch) then
-                resizeInput = input
-                resizeStart = Vector2.new(input.Position.X, input.Position.Y)
-                resizeAxis = axis
-                startScale = menuScale.Scale
-            end
+            if resizeInput or menuAnimating or dlg.Visible then return end
+            if kind ~= Enum.UserInputType.MouseButton1 and kind ~= Enum.UserInputType.Touch then return end
+            resizeInput,resizeStart = input,input.Position
+            edge = Vector2.new(xDirection,yDirection)
+            baseSize,basePosition = m.Size,m.Position
         end)
-        return handle
     end
 
-    resizeHandle(u(0,6,1,-54), u(1,-6,0,34), Vector2.new(width,0))
-    resizeHandle(u(1,-20,0,6), u(0,0,1,-6), Vector2.new(0,height))
-    local corner = resizeHandle(u(0,20,0,20), u(1,-20,1,-20), Vector2.new(width,height))
-    ui("Frame", {Size=u(0,9,0,2), Position=u(1,-13,1,-6), BackgroundColor3=sb, BorderSizePixel=0, ZIndex=7}, corner, 1)
-    ui("Frame", {Size=u(0,2,0,9), Position=u(1,-6,1,-13), BackgroundColor3=sb, BorderSizePixel=0, ZIndex=7}, corner, 1)
+    resizeHandle(u(1,-20,0,6),u(0,10,0,0),0,-1)
+    resizeHandle(u(1,-20,0,6),u(0,10,1,-6),0,1)
+    resizeHandle(u(0,6,1,-20),u(0,0,0,10),-1,0)
+    resizeHandle(u(0,6,1,-20),u(1,-6,0,10),1,0)
+    for _,x in ipairs({-1,1}) do
+        for _,y in ipairs({-1,1}) do
+            resizeHandle(u(0,10,0,10),u(x==1 and 1 or 0,x==1 and -10 or 0,y==1 and 1 or 0,y==1 and -10 or 0),x,y)
+        end
+    end
 
     local resizeMove = U.InputChanged:Connect(function(input)
-        if not resizeInput or not m.Visible then return end
+        if not resizeInput or not m.Visible or menuAnimating then return end
         local mouseMove = resizeInput.UserInputType == Enum.UserInputType.MouseButton1
             and input.UserInputType == Enum.UserInputType.MouseMovement
         if not mouseMove and input ~= resizeInput then return end
 
-        local delta = Vector2.new(input.Position.X, input.Position.Y) - resizeStart
-        local scaleDelta = delta:Dot(resizeAxis) / resizeAxis:Dot(resizeAxis)
-        menuScale.Scale = math.clamp(startScale + scaleDelta, 0.75, 1.5)
+        local delta = input.Position-resizeStart
+        local width = math.max(minimumWidth,baseSize.X.Offset+delta.X*edge.X)
+        local height = math.max(minimumHeight,baseSize.Y.Offset+delta.Y*edge.Y)
+        local shiftX = edge.X < 0 and baseSize.X.Offset-width or 0
+        local shiftY = edge.Y < 0 and baseSize.Y.Offset-height or 0
+        m.Size = u(0,width,0,height)
+        m.Position = u(basePosition.X.Scale,basePosition.X.Offset+shiftX,basePosition.Y.Scale,basePosition.Y.Offset+shiftY)
     end)
     local resizeEnd = U.InputEnded:Connect(function(input)
         if input == resizeInput then resizeInput = nil end
@@ -830,6 +1076,7 @@ end
 
 local dragWin,winStart,winPos=false,nil,nil
 tp.InputBegan:Connect(function(i)
+    if menuAnimating then return end
     if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
         dragWin,winStart,winPos=true,i.Position,m.Position
     end
@@ -844,7 +1091,7 @@ end)
 
 U.InputChanged:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
-        if dragWin then
+        if dragWin and not menuAnimating then
             local d=i.Position-winStart
             m.Position=UDim2.new(winPos.X.Scale,winPos.X.Offset+d.X,winPos.Y.Scale,winPos.Y.Offset+d.Y)
         elseif draggingBtn then
@@ -969,7 +1216,7 @@ end)
 
 mTakeB.MouseButton1Click:Connect(function()
     takeRun=not takeRun
-    mTakeB.BackgroundColor3=takeRun and c(200,55,65) or cd
+    mTakeB.BackgroundColor3=takeRun and danger or cd
     mTakeB.Text=takeRun and "АВТО-ПРИЁМ: ВКЛ" or "АВТО-ПРИЁМ: ВЫКЛ"
     if not takeRun then mSt.Text="Авто-приём остановлен." return end
     mSt.Text="Авто-приём включен."
@@ -1057,13 +1304,13 @@ end)
 
 stAutoB.MouseButton1Click:Connect(function()
     stRun=not stRun
-    stAutoB.BackgroundColor3=stRun and c(200,55,65) or ac
+    stAutoB.BackgroundColor3=stRun and danger or ac
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
 end)
 
 trB.MouseButton1Click:Connect(function()
     trRun=not trRun
-    trB.BackgroundColor3=trRun and c(200,55,65) or ac
+    trB.BackgroundColor3=trRun and danger or ac
     trB.Text=trRun and "АВТО-ТОРГАШ: ВКЛ" or "АВТО-ТОРГАШ: ВЫКЛ"
     if not trRun then trSt.Text="Статус: ВЫКЛ" return end
     lastTrader=nil
@@ -1171,6 +1418,6 @@ tB.MouseButton1Click:Connect(function()
     run=not run
     sniperSession=sniperSession+1
     local session=sniperSession
-    if run then tB.BackgroundColor3,tB.Text=c(200,55,65),"СТОП" bl,okC={},0 task.spawn(function() while run and sniperSession==session do step(session) end end)
+    if run then tB.BackgroundColor3,tB.Text=danger,"СТОП" bl,okC={},0 task.spawn(function() while run and sniperSession==session do step(session) end end)
     else stop("Остановлено") end
 end)
