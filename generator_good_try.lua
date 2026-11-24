@@ -29,6 +29,7 @@ local function parseM(str)
 end
 local oB=bt(g,"Меню",u(0,86,0,28),u(0,15,0.5,-14),sd,8,1) oB.Visible=false
 local m=ui("Frame",{Size=u(0,435,0,320),Position=u(0.5,-217,0.3,0),BackgroundColor3=bg},g,10,1)
+local menuScale=Instance.new("UIScale",m)
 local tp=ui("Frame",{Size=u(1,0,0,34),BackgroundColor3=sd},m,10)
 lb(tp,"Меню",u(0,140,1,0),u(0,12,0,0),ac,18)
 local mB=bt(tp,"—",u(0,24,0,22),u(1,-54,0,6),cd)
@@ -105,7 +106,17 @@ local stC=ui("Frame",{Size=u(1,0,0,44),Position=u(0,0,0,192),BackgroundColor3=cd
 local st=lb(stC,"Ожидание | Успешных покупок: 0",u(1,-14,1,-8),u(0,8,0,4),tx,17) st.TextWrapped,st.TextYAlignment=true,0
 local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
 local trCard=ui("Frame",{Size=u(1,0,0,185),BackgroundColor3=cd},p4,8,1)
-local trSt=lb(trCard,"Статус: ВЫКЛ",u(1,-16,1,-12),u(0,8,0,6),tx,17) trSt.TextWrapped,trSt.TextYAlignment=true,0
+lb(trCard,"Покупать слоты торгаша:",u(1,-16,0,22),u(0,8,0,4),sb,17)
+local traderEnabled={true,true,true,true}
+for i=1,4 do
+    local button=bt(trCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
+    button.MouseButton1Click:Connect(function()
+        traderEnabled[i]=not traderEnabled[i]
+        button.Text=tostring(i)..(traderEnabled[i] and ": ON" or ": OFF")
+        button.BackgroundColor3=traderEnabled[i] and ac or bg
+    end)
+end
+local trSt=lb(trCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) trSt.TextWrapped,trSt.TextYAlignment=true,0
 local trB=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
 
 local mC1=ui("Frame",{Size=u(1,0,0,50),BackgroundColor3=cd},p5,8,1)
@@ -124,7 +135,17 @@ local mSendB=bt(p5,"ОТПРАВИТЬ",u(0.48,0,0,38),u(0,0,1,-38),ac,8)
 local mTakeB=bt(p5,"АВТО-ПРИЁМ: ВЫКЛ",u(0.49,0,0,38),u(0.51,0,1,-38),cd,8,1)
 
 local stCard=ui("Frame",{Size=u(1,0,0,185),BackgroundColor3=cd},p6,8,1)
-local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-12),u(0,8,0,6),tx,17) stInfo.TextWrapped,stInfo.TextYAlignment=true,0
+lb(stCard,"Уровни зелий для покупки:",u(1,-16,0,22),u(0,8,0,4),sb,17)
+local stallLevels={true,true,true,true}
+for i=1,4 do
+    local button=bt(stCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
+    button.MouseButton1Click:Connect(function()
+        stallLevels[i]=not stallLevels[i]
+        button.Text=tostring(i)..(stallLevels[i] and ": ON" or ": OFF")
+        button.BackgroundColor3=stallLevels[i] and ac or bg
+    end)
+end
+local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) stInfo.TextWrapped,stInfo.TextYAlignment=true,0
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
 local setR1=ui("Frame",{Size=u(1,0,0,38),BackgroundColor3=cd},p7,8,1)
 lb(setR1,"Клавиша меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
@@ -142,6 +163,17 @@ local mailDelayBox=bx(setR3,"4",u(0,46,0,24),u(1,-54,0,7))
 local setR4=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,132),BackgroundColor3=cd},p7,8,1)
 lb(setR4,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
 local stallDelayBox=bx(setR4,"2",u(0,46,0,24),u(1,-54,0,7))
+
+local setR5=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,176),BackgroundColor3=cd},p7,8,1)
+lb(setR5,"Размер меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
+local sizes={0.75,1,1.25,1.5}
+local sizeIndex=2
+local sizeB=bt(setR5,"100%",u(0.42,-8,0,24),u(0.58,0,0,7),bg,6,1)
+sizeB.MouseButton1Click:Connect(function()
+    sizeIndex=sizeIndex%#sizes+1
+    menuScale.Scale=sizes[sizeIndex]
+    sizeB.Text=tostring(math.floor(sizes[sizeIndex]*100)).."%"
+end)
 
 local optCfg={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
 local optOpenB=bt(p7,"НАСТРОЙКА ОПТИМИЗАЦИИ",u(1,0,0,38),u(0,0,1,-38),ac,8)
@@ -263,6 +295,7 @@ pickB.MouseButton1Click:Connect(function() if refreshModal()==0 then mSt.Text="�
 pDoneB.MouseButton1Click:Connect(function() pModal.Visible=false updPickTxt() end)
 
 local run,trRun,takeRun,stRun,okC,lN=false,false,false,false,0,0
+local sniperSession=0
 local lastTrader,takenPosts=nil,{}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
 
@@ -535,13 +568,18 @@ end
 local function buyAllStall()
     local bought=0
     for _,pid in ipairs(allPotions) do
-        for _=1,10 do
-            local ok,res=pcall(function() return ST:InvokeServer("buy",pid) end)
-            if ok and type(res)=="table" and res.ok then
-                bought=bought+1
-                stInfo.Text="Покупка ассортимента...\nКуплено за заход: "..bought.." шт."
-                task.wait(0.18)
-            else break end
+        local level=tonumber(pid:match("_(%d+)$"))
+        if not stRun then break end
+        if level and stallLevels[level] then
+            for _=1,10 do
+                if not stRun or not stallLevels[level] then break end
+                local ok,res=pcall(function() return ST:InvokeServer("buy",pid) end)
+                if ok and type(res)=="table" and res.ok then
+                    bought=bought+1
+                    stInfo.Text="Покупка ассортимента...\nКуплено за заход: "..bought.." шт."
+                    task.wait(0.18)
+                else break end
+            end
         end
     end
     return bought
@@ -591,10 +629,13 @@ trB.MouseButton1Click:Connect(function()
                     local pr=npc:FindFirstChildWhichIsA("ProximityPrompt",true)
                     if pr and fireproximityprompt then task.wait(0.2) fireproximityprompt(pr) end
                     task.wait(0.35)
-                    for i=1,4 do if not trRun then break end pcall(function() TR:InvokeServer("buy",i) end) task.wait(0.25) end
+                    for i=1,4 do
+                        if not trRun then break end
+                        if traderEnabled[i] then pcall(function() TR:InvokeServer("buy",i) end) task.wait(0.25) end
+                    end
                     if hrp then hrp.CFrame=old end
                     lastTrader=npc
-                    trSt.Text="Всё скуплено. Жду следующего Торгаша..."
+                    trSt.Text="Выбранные слоты обработаны. Жду следующего Торгаша..."
                 end
             elseif not npc then
                 lastTrader=nil
@@ -607,7 +648,7 @@ end)
 local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC end
 local function wN() local gp=math.max(1.4,tonumber(dBox.Text) or 1.5) local df=os.clock()-lN if df<gp then task.wait(gp-df) end lN=os.clock() end
 local function getP(t) if type(t)~="table" then return 0 end local d=t.lot or t return tonumber(d.p) or tonumber(d.ask) or tonumber(d.start) or tonumber(d.price) or 0 end
-local function freshP(id) wN() local ok,inf=pcall(function() return ML:InvokeServer(id) end) return ok and getP(inf) or 0 end
+local function freshP(id,session) wN() if not run or session~=sniperSession then return 0 end local ok,inf=pcall(function() return ML:InvokeServer(id) end) return ok and getP(inf) or 0 end
 
 local function getRarMax(rarId)
     local r=rarMap[rarId]
@@ -615,20 +656,23 @@ local function getRarMax(rarId)
     return parseM(r.box.Text)
 end
 
-local function hold(lot,maxP,lim)
+local function hold(lot,maxP,lim,session)
     local act,fixed=getP(lot),false
     if act<=0 or act>maxP then bl[lot.id]=true return false end
     for att=1,40 do
-        if not run or (lim>0 and okC>=lim) then return true end
+        if not run or session~=sniperSession or (lim>0 and okC>=lim) then return true end
         wN()
+        if not run or session~=sniperSession then return true end
         local ok,res=pcall(function() return MB:InvokeServer(lot.id,act) end)
+        if session~=sniperSession then return true end
         if ok and type(res)=="table" then
             if res.ok then okC=okC+1 bl[lot.id]=true st.Text="Куплен ["..tostring(lot.rarity).."]: "..tostring(lot.text).." ("..act.." ₽)\nУспешных: "..okC if lim>0 and okC>=lim then stop("Готово.") end return true end
             local err=tostring(res.err or "ожидание") local le=err:lower()
             if le:find("изменилась") then
                 if fixed then bl[lot.id]=true return false end
                 fixed=true
-                local np=getP(res) if np<=0 then np=freshP(lot.id) end
+                local np=getP(res) if np<=0 then np=freshP(lot.id,session) end
+                if not run or session~=sniperSession then return true end
                 if np>0 and np<=maxP then act=np st.Text="Новая цена: "..act.." ₽" else bl[lot.id]=true st.Text="Пропуск: "..np.." ₽ > лимита" return false end
             elseif le:find("денег") or le:find("средств") or le:find("баланс") or le:find("мест") or le:find("слот") then stop("Ошибка: "..err) return true
             elseif le:find("закрыт") or le:find("продан") or le:find("купили") or le:find("нет такого") or le:find("найден") then bl[lot.id]=true st.Text="Пропуск: "..err return false
@@ -638,21 +682,23 @@ local function hold(lot,maxP,lim)
     bl[lot.id]=true return false
 end
 
-local function step()
+local function step(session)
     local lim=tonumber((lBox.Text:gsub("%D",""))) or 0
     if lim>0 and okC>=lim then stop("Лимит достигнут.") return end
     local actR={} for _,r in ipairs(rars) do if r.on and getRarMax(r.id)>0 then table.insert(actR,r.id) end end
-    if #actR==0 then st.Text="Ошибка: включи редкость и укажи цену > 0." return end
+    if #actR==0 then st.Text="Ошибка: включи редкость и укажи цену > 0." task.wait(0.25) return end
     wN()
+    if not run or session~=sniperSession then return end
     local ok,res=pcall(function() return GM:InvokeServer({q="",kind="fix",sort=curSort.id,rar=actR}) end)
+    if not run or session~=sniperSession then return end
     if ok and type(res)=="table" and type(res.items)=="table" then
         local now=tonumber(res.now) or os.time()
         for _,lot in ipairs(res.items) do
-            if not run or (lim>0 and okC>=lim) then break end
+            if not run or session~=sniperSession or (lim>0 and okC>=lim) then break end
             local p=getP(lot)
             local rMax=getRarMax(lot.rarity)
             if lot.fix and rMax>0 and (tonumber(lot.expiresAt) or now+100)>now and lot.seller~=plr.UserId and p>0 and p<=rMax and not bl[lot.id] then
-                if hold(lot,rMax,lim) then return end
+                if hold(lot,rMax,lim,session) then return end
             end
         end
         if run then st.Text="Поиск ("..curSort.n..") по "..#actR.." редкостям...\nУспешных покупок: "..okC end
@@ -661,6 +707,8 @@ end
 
 tB.MouseButton1Click:Connect(function()
     run=not run
-    if run then tB.BackgroundColor3,tB.Text=c(200,55,65),"СТОП" bl,okC={},0 task.spawn(function() while run do step() end end)
+    sniperSession=sniperSession+1
+    local session=sniperSession
+    if run then tB.BackgroundColor3,tB.Text=c(200,55,65),"СТОП" bl,okC={},0 task.spawn(function() while run and sniperSession==session do step(session) end end)
     else stop("Остановлено") end
 end)
