@@ -147,33 +147,54 @@ for i=1,4 do
 end
 local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17) stInfo.TextWrapped,stInfo.TextYAlignment=true,0
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
-local setR1=ui("Frame",{Size=u(1,0,0,38),BackgroundColor3=cd},p7,8,1)
+local setR1=ui("Frame",{Size=u(1,0,0,36),BackgroundColor3=cd},p7,8,1)
 lb(setR1,"Клавиша меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
 local bindB=bt(setR1,"RightControl",u(0.42,-8,0,24),u(0.58,0,0,7),bg,6,1)
 
-local setR2=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,44),BackgroundColor3=cd},p7,8,1)
+local setR2=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,40),BackgroundColor3=cd},p7,8,1)
 lb(setR2,"Анти-АФК (защита от кика):",u(0.7,0,1,0),u(0,10,0,0),sb)
 local afkOn=true
 local afkB=bt(setR2,"ON",u(0,46,0,24),u(1,-54,0,7),ac,6,1)
 
-local setR3=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,88),BackgroundColor3=cd},p7,8,1)
+local setR3=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,80),BackgroundColor3=cd},p7,8,1)
 lb(setR3,"Пауза проверки почты (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
 local mailDelayBox=bx(setR3,"4",u(0,46,0,24),u(1,-54,0,7))
 
-local setR4=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,132),BackgroundColor3=cd},p7,8,1)
+local setR4=ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,120),BackgroundColor3=cd},p7,8,1)
 lb(setR4,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
 local stallDelayBox=bx(setR4,"2",u(0,46,0,24),u(1,-54,0,7))
 
-local setR5=ui("Frame",{Size=u(1,0,0,38),Position=u(0,0,0,176),BackgroundColor3=cd},p7,8,1)
-lb(setR5,"Размер меню:",u(0.55,0,1,0),u(0,10,0,0),sb)
-local sizes={0.75,1,1.25,1.5}
-local sizeIndex=2
-local sizeB=bt(setR5,"100%",u(0.42,-8,0,24),u(0.58,0,0,7),bg,6,1)
-sizeB.MouseButton1Click:Connect(function()
-    sizeIndex=sizeIndex%#sizes+1
-    menuScale.Scale=sizes[sizeIndex]
-    sizeB.Text=tostring(math.floor(sizes[sizeIndex]*100)).."%"
-end)
+do
+    local upkeepInterval = 60 * 60
+    local upkeepEnabled = false
+    local nextUpkeep = 0
+    local row = ui("Frame", {Size=u(1,0,0,36), Position=u(0,0,0,160), BackgroundColor3=cd}, p7, 8, 1)
+    lb(row, "Автопродление номеров (раз в час)", u(0.81,0,1,0), u(0,10,0,0), sb)
+    local toggle = bt(row, "OFF", u(0,46,0,24), u(1,-54,0,6), bg, 6, 1)
+    toggle.Activated:Connect(function()
+        upkeepEnabled = not upkeepEnabled
+        toggle.Text = upkeepEnabled and "ON" or "OFF"
+        toggle.BackgroundColor3 = upkeepEnabled and ac or bg
+    end)
+
+    task.spawn(function()
+        while g.Parent do
+            if upkeepEnabled and os.clock() >= nextUpkeep then
+                local remote = Rem:FindFirstChild("PayAllUpkeep")
+                if remote and remote:IsA("RemoteFunction") then
+                    local ok, err = pcall(function()
+                        remote:InvokeServer()
+                    end)
+                    if not ok then
+                        warn("PayAllUpkeep:", err)
+                    end
+                    nextUpkeep = os.clock() + upkeepInterval
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
 
 local optCfg={shadows=true,materials=true,textures=true,particles=true,cleanup=false,no3d=false,hideui=false,fps=30}
 local optOpenB=bt(p7,"НАСТРОЙКА ОПТИМИЗАЦИИ",u(1,0,0,38),u(0,0,1,-38),ac,8)
@@ -378,6 +399,54 @@ optApplyB.MouseButton1Click:Connect(function() local val=tonumber((fpsBox.Text:g
 
 local function tog(s) if s==nil then s=not m.Visible end m.Visible,oB.Visible=s,not s end
 mB.MouseButton1Click:Connect(function() tog(false) end)
+
+do
+    local resizeInput, resizeStart, resizeAxis, startScale
+    local width, height = m.Size.X.Offset, m.Size.Y.Offset
+
+    local function resizeHandle(size, position, axis)
+        local handle = ui("Frame", {
+            Size=size, Position=position, BackgroundTransparency=1, Active=true, ZIndex=6,
+        }, m)
+        handle.InputBegan:Connect(function(input)
+            local kind = input.UserInputType
+            if not resizeInput and (kind == Enum.UserInputType.MouseButton1 or kind == Enum.UserInputType.Touch) then
+                resizeInput = input
+                resizeStart = Vector2.new(input.Position.X, input.Position.Y)
+                resizeAxis = axis
+                startScale = menuScale.Scale
+            end
+        end)
+        return handle
+    end
+
+    resizeHandle(u(0,6,1,-54), u(1,-6,0,34), Vector2.new(width,0))
+    resizeHandle(u(1,-20,0,6), u(0,0,1,-6), Vector2.new(0,height))
+    local corner = resizeHandle(u(0,20,0,20), u(1,-20,1,-20), Vector2.new(width,height))
+    ui("Frame", {Size=u(0,9,0,2), Position=u(1,-13,1,-6), BackgroundColor3=sb, BorderSizePixel=0, ZIndex=7}, corner, 1)
+    ui("Frame", {Size=u(0,2,0,9), Position=u(1,-6,1,-13), BackgroundColor3=sb, BorderSizePixel=0, ZIndex=7}, corner, 1)
+
+    local resizeMove = U.InputChanged:Connect(function(input)
+        if not resizeInput or not m.Visible then return end
+        local mouseMove = resizeInput.UserInputType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseMovement
+        if not mouseMove and input ~= resizeInput then return end
+
+        local delta = Vector2.new(input.Position.X, input.Position.Y) - resizeStart
+        local scaleDelta = delta:Dot(resizeAxis) / resizeAxis:Dot(resizeAxis)
+        menuScale.Scale = math.clamp(startScale + scaleDelta, 0.75, 1.5)
+    end)
+    local resizeEnd = U.InputEnded:Connect(function(input)
+        if input == resizeInput then resizeInput = nil end
+    end)
+    m:GetPropertyChangedSignal("Visible"):Connect(function()
+        if not m.Visible then resizeInput = nil end
+    end)
+    g.Destroying:Connect(function()
+        resizeMove:Disconnect()
+        resizeEnd:Disconnect()
+    end)
+end
 
 local dragWin,winStart,winPos=false,nil,nil
 tp.InputBegan:Connect(function(i)
