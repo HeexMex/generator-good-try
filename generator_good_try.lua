@@ -430,7 +430,7 @@ local function tog(s) if s==nil then s=not m.Visible end m.Visible,oB.Visible=s,
 mB.MouseButton1Click:Connect(function() tog(false) end)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
-local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—"}
+local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—", batchPrice=nil}
 do
     local rarityByText = {
         ["ОБЫЧНЫЙ"]="COMMON", ["Обычный"]="COMMON",
@@ -447,25 +447,77 @@ do
         return label.Text:gsub("<[^>]*>", ""):match("^%s*(.-)%s*$")
     end
 
+    local function parsePrice(label, requireCurrency)
+        if not label or not label:IsA("TextLabel") then return end
+        local value = plainText(label)
+        if requireCurrency and not value:match("₽$") then return end
+        local digits = value:gsub("₽$", ""):gsub("%s", "")
+        digits = digits:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
+        return tonumber(digits:match("^%d+$"))
+    end
+
     local function readPrice(card)
         local body = card:FindFirstChild("Body")
         local priceBox = body and body:FindFirstChild("CanvasGroup")
         if not priceBox then return end
         local children = priceBox:GetChildren()
-        local function parseLabel(label, requireCurrency)
-            if not label or not label:IsA("TextLabel") then return end
-            local value = plainText(label)
-            if requireCurrency and not value:match("₽$") then return end
-            local digits = value:gsub("₽$", ""):gsub("%s", "")
-            digits = digits:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
-            return tonumber(digits:match("^%d+$"))
-        end
-        local price = parseLabel(children[3],false)
+        local price = parsePrice(children[3],false)
         if price then return fmtNum(price).." ₽" end
         for _,label in ipairs(children) do
-            price = parseLabel(label,true)
+            price = parsePrice(label,true)
             if price then return fmtNum(price).." ₽" end
         end
+    end
+
+    local miniPrices = {}
+    local function readMiniPrices(container, depth)
+        if depth > 0 then
+            local best, bestCount, bestTotal = nil,0,0
+            for _,frame in ipairs(container:GetChildren()) do
+                if frame.Name == "Frame" and frame:IsA("Frame") and frame.Visible then
+                    local prices,count,total = readMiniPrices(frame,depth-1)
+                    if count > bestCount then best,bestCount,bestTotal = prices,count,total end
+                end
+            end
+            return best,bestCount,bestTotal
+        end
+
+        local prices,count,total = {},0,0
+        for _,card in ipairs(container:GetChildren()) do
+            if card:IsA("Frame") and card.Visible then
+                local label = card:FindFirstChild("TextLabel")
+                local price = parsePrice(label,false)
+                if price then
+                    prices[label] = price
+                    count += 1
+                    total += price
+                end
+            end
+        end
+        return prices,count,total
+    end
+
+    local function observeMiniRoll(pg)
+        local plates = pg and pg:FindFirstChild("PlatesUI")
+        local mini = plates and plates:FindFirstChild("RollMini")
+        local prices,count,total
+        if mini and mini.Visible then prices,count,total = readMiniPrices(mini,3) end
+        if not prices or count == 0 then
+            table.clear(miniPrices)
+            return
+        end
+
+        local changed = false
+        for label,price in pairs(prices) do
+            if miniPrices[label] ~= price then changed = true break end
+        end
+        if not changed then
+            for label in pairs(miniPrices) do
+                if prices[label] == nil then changed = true break end
+            end
+        end
+        miniPrices = prices
+        if changed then afkRolls.batchPrice = fmtNum(total).." ₽" end
     end
 
     local function readPlate(plate)
@@ -531,13 +583,14 @@ do
         latestCard = card
         afkRolls.last = number or caption
         afkRolls.lastPrice = readPrice(card) or "—"
+        afkRolls.batchPrice = nil
     end
 
     task.spawn(function()
         while g.Parent do
+            local pg = plr:FindFirstChild("PlayerGui")
             local attached = results and results:IsDescendantOf(plr)
             if not attached then
-                local pg = plr:FindFirstChild("PlayerGui")
                 local window = pg and pg:FindFirstChild("RollWindow",true)
                 results = window and window:FindFirstChild("Results")
             end
@@ -548,6 +601,7 @@ do
             for card in pairs(seen) do
                 if card.Parent ~= results then seen[card] = nil end
             end
+            observeMiniRoll(pg)
             task.wait(0.2)
         end
     end)
@@ -609,7 +663,7 @@ do
             captionLabel.TextTruncate = Enum.TextTruncate.AtEnd
             local value = text(parent,initial,u(0.55,-8,0,19),u(0.45,0,0,y),color or tx,Enum.TextXAlignment.Right)
             value.TextTruncate = Enum.TextTruncate.AtEnd
-            return value
+            return value,captionLabel
         end
         local first = metric(column,firstCaption,32,"—")
         local second = metric(column,secondCaption,51,"—",green)
@@ -621,12 +675,13 @@ do
         end
         local lastBox = frame(column,u(1,-16,0,48),u(0,8,0,175),bg,5)
         local last = metric(lastBox,lastCaption,extraCaption and 4 or 14,"—")
-        local extra = extraCaption and metric(lastBox,extraCaption,24,"—",green)
-        return first,second,counts,last,extra
+        local extra,extraLabel
+        if extraCaption then extra,extraLabel = metric(lastBox,extraCaption,24,"—",green) end
+        return first,second,counts,last,extra,extraLabel
     end
 
     local bought,spent,counts,last = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
-    local rolled,caught,rollCounts,lastRoll,lastPrice = section("Крутки номеров",264,"Прокруты","Улов (редкие+)","Выпавший","Стоимость")
+    local rolled,caught,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Улов (редкие+)","Выпавший","Стоимость")
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
 
@@ -638,6 +693,40 @@ do
             local stat = leaderstats and leaderstats:FindFirstChild(key)
             if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue")) then return stat.Value end
         end
+
+        local pg = plr:FindFirstChild("PlayerGui")
+        local plates = pg and pg:FindFirstChild("PlatesUI")
+        local top = plates and plates:FindFirstChild("TopPanel")
+        if not top then return end
+
+        local function isBalanceName(name)
+            local lower = name:lower()
+            return lower:find("money",1,true) or lower:find("cash",1,true)
+                or lower:find("balance",1,true) or lower == "rub"
+                or name == "Баланс" or name == "Деньги" or name == "₽"
+        end
+
+        local named, currency
+        local namedConflict, currencyConflict = false,false
+        for _,label in ipairs(top:GetDescendants()) do
+            if label:IsA("TextLabel") or label:IsA("TextButton") then
+                local amountText = label.Text:gsub("<[^>]*>", ""):gsub("%s", "")
+                amountText = amountText:gsub(utf8.char(160), ""):gsub(utf8.char(8239), "")
+                local digits = amountText:match("^(%d+)₽$") or amountText:match("^₽(%d+)$")
+                local value = digits and tonumber(digits)
+                if value and label:IsA("TextLabel") then
+                    currencyConflict = currencyConflict or (currency ~= nil and currency ~= value)
+                    currency = value
+                end
+                value = value or tonumber(amountText:match("^%d+$"))
+                if value and (isBalanceName(label.Name) or isBalanceName(label.Parent.Name)) then
+                    namedConflict = namedConflict or (named ~= nil and named ~= value)
+                    named = value
+                end
+            end
+        end
+        if named ~= nil and not namedConflict then return named end
+        if not currencyConflict then return currency end
     end
 
     local startedAt, previousOpt, previousOrder
@@ -655,8 +744,9 @@ do
             caught.Text = tostring(afkRolls.caught)
             for id,label in pairs(rollCounts) do label.Text = "×"..(afkRolls.byRarity[id] or 0) end
             lastRoll.Text = afkRolls.last
-            lastPrice.Text = afkRolls.lastPrice
         end
+        lastPrice.Text = afkRolls.batchPrice or afkRolls.lastPrice
+        priceLabel.Text = afkRolls.batchPrice and "Стоимость пачки" or "Стоимость"
     end
 
     exitAfkMode = function()
