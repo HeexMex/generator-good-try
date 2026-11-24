@@ -1,7 +1,7 @@
 local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("ReplicatedStorage"),game:GetService("CoreGui"),game:GetService("Players"),game:GetService("VirtualUser"),game:GetService("Lighting"),game:GetService("RunService")
 local plr=P.LocalPlayer
 local Rem=R:WaitForChild("Remotes")
-local GM,ML,MB,TR,PS,ST=Rem.GetMarket,Rem.MarketLot,Rem.MarketBuy,Rem.Trader,Rem.Post,Rem.Stall
+local GM,ML,MB,PS,ST=Rem.GetMarket,Rem.MarketLot,Rem.MarketBuy,Rem.Post,Rem.Stall
 if C:FindFirstChild("ZS") then C.ZS:Destroy() end
 
 local g=Instance.new("ScreenGui",C) g.Name,g.ResetOnSpawn,g.IgnoreGuiInset="ZS",false,true
@@ -105,21 +105,8 @@ end
 local stC=ui("Frame",{Size=u(1,0,0,44),Position=u(0,0,0,192),BackgroundColor3=cd},p1,8,1)
 local st=lb(stC,"Ожидание | Успешных покупок: 0",u(1,-14,1,-8),u(0,8,0,4),tx,17) st.TextWrapped,st.TextYAlignment=true,0
 local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
-local trCard=ui("Frame",{Size=u(1,0,0,228),BackgroundColor3=cd},p4,8,1)
-lb(trCard,"Покупать слоты торгаша:",u(1,-16,0,22),u(0,8,0,4),sb,17)
-local traderEnabled={true,true,true,true}
-for i=1,4 do
-    local button=bt(trCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
-    button.MouseButton1Click:Connect(function()
-        traderEnabled[i]=not traderEnabled[i]
-        button.Text=tostring(i)..(traderEnabled[i] and ": ON" or ": OFF")
-        button.BackgroundColor3=traderEnabled[i] and ac or bg
-    end)
-end
-local trSt=lb(trCard,"Статус: ВЫКЛ",u(1,-16,0,38),u(0,8,0,184),tx,17) trSt.TextWrapped,trSt.TextYAlignment=true,0
-local trB=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
-
 do
+    local trCard=ui("Frame",{Size=u(1,0,0,158),BackgroundColor3=cd},p4,8,1)
     local function normalizeItemName(value)
         value = value:gsub("<[^>]*>", ""):gsub(utf8.char(160), " "):gsub(utf8.char(8239), " ")
         return value:lower():gsub(utf8.charpattern,function(letter)
@@ -143,20 +130,20 @@ do
         end},
     }
 
-    lb(trCard,"Фильтр ассортимента",u(1,-16,0,19),u(0,8,0,63),tx,18)
+    lb(trCard,"Фильтр ассортимента",u(1,-24,0,28),u(0,12,0,8),tx,18).TextSize = 13
     for index,filter in ipairs(filters) do
         filter.enabled = true
-        local y = 84+(index-1)*27
-        lb(trCard,filter.name,u(1,-104,0,23),u(0,8,0,y),sb)
-        filter.status = lb(trCard,"—",u(0,48,0,23),u(1,-101,0,y),sb,17,Enum.TextXAlignment.Right)
-        local toggle = bt(trCard,"ON",u(0,40,0,23),u(1,-48,0,y),ac,6,1)
+        local y = 45+(index-1)*34
+        lb(trCard,filter.name,u(1,-144,0,28),u(0,12,0,y),sb)
+        filter.status = lb(trCard,"—",u(0,84,0,28),u(1,-140,0,y),sb,17,Enum.TextXAlignment.Right)
+        local toggle = bt(trCard,"ON",u(0,40,0,26),u(1,-50,0,y+1),ac,6,1)
         toggle.Activated:Connect(function()
             filter.enabled = not filter.enabled
             toggle.Text = filter.enabled and "ON" or "OFF"
             toggle.BackgroundColor3 = filter.enabled and ac or bg
         end)
     end
-    local hint = lb(trCard,"Открой окно торговца, чтобы увидеть совпадения.",u(1,-16,0,32),u(0,8,0,145),sb,17)
+    local hint = lb(trCard,"Открой окно торговца, чтобы проверить товары.",u(1,-24,0,30),u(0,12,0,117),sb,17)
     hint.TextWrapped = true
 
     local function readAssortment()
@@ -175,7 +162,13 @@ do
             if parent ~= panel then continue end
             local name = normalizeItemName(label.Text)
             for index,filter in ipairs(filters) do
-                if filter.enabled and filter.matches(name) then matches[index] = true end
+                if not filter.enabled or not filter.matches(name) then continue end
+                for _,child in ipairs(label.Parent:GetChildren()) do
+                    if child:IsA("TextButton") and child.Visible and child.Text:find("₽",1,true) then
+                        matches[index] = child.Text:gsub("<[^>]*>","")
+                        break
+                    end
+                end
             end
         end
         return matches
@@ -185,11 +178,11 @@ do
         while g.Parent do
             if m.Visible and p4.Visible then
                 local matches = readAssortment()
-                hint.Text = matches and "Совпадения в открытом ассортименте."
-                    or "Открой окно торговца, чтобы увидеть совпадения."
+                hint.Text = matches and "Цены из открытого ассортимента торговца."
+                    or "Открой окно торговца, чтобы проверить товары."
                 for index,filter in ipairs(filters) do
                     local found = matches and matches[index]
-                    filter.status.Text = filter.enabled and matches and (found and "Найден" or "Нет") or "—"
+                    filter.status.Text = filter.enabled and matches and (found or "Нет") or "—"
                     filter.status.TextColor3 = found and c(74,222,128) or sb
                 end
             end
@@ -347,17 +340,30 @@ local selPlates,sentPlates={},{}
 local function countSel() local n=0 for _ in pairs(selPlates) do n=n+1 end return n end
 local function updPickTxt() pickB.Text="Номера: "..countSel() end
 
-local function scanMyPlates()
+local function plateId(item)
+    if type(item) ~= "table" then return end
+    return rawget(item,"uid") or rawget(item,"sn") or rawget(item,"id")
+end
+
+local function scanMyPlates(sortByLabel)
     local pref,bestMap,bestCnt=tostring(plr.UserId).."_",{},0
+    local mounted,hasMountState = {},false
     if type(getgc)=="function" then
         for _,obj in ipairs(getgc(true)) do
-            if type(obj)=="table" and #obj>0 then
+            if type(obj)~="table" then continue end
+            local inventory,index = rawget(obj,"inventory"),rawget(obj,"car")
+            if index == nil and rawget(obj,"hasCar") == false then index = 0 end
+            if type(inventory)=="table" and type(index)=="number" and index>=0 and type(rawget(obj,"wall"))=="table" then
+                local id = plateId(rawget(inventory,index))
+                if index ~= 0 and (type(id)~="string" or id:sub(1,#pref)~=pref) then continue end
+                hasMountState = true
+                if index > 0 then mounted[id] = true end
                 local valid,tmp=0,{}
-                for _,item in ipairs(obj) do
+                for _,item in ipairs(inventory) do
                     if type(item)=="table" then
-                        local idV=rawget(item,"uid") or rawget(item,"sn") or rawget(item,"id")
+                        local idV=plateId(item)
                         local txtV=rawget(item,"text")
-                        if type(idV)=="string" and idV:find(pref,1,true) and type(txtV)=="string" then
+                        if type(idV)=="string" and idV:sub(1,#pref)==pref and type(txtV)=="string" then
                             valid=valid+1
                             if not sentPlates[idV] and not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") then
                                 tmp[idV]=txtV.." ["..tostring(rawget(item,"rarity") or "").."]"
@@ -369,49 +375,114 @@ local function scanMyPlates()
             end
         end
     end
-    local list={} for idV,lblTxt in pairs(bestMap) do table.insert(list,{id=idV,label=lblTxt}) end
-    table.sort(list,function(a,b) return a.label<b.label end)
-    return list
+    local list={}
+    if hasMountState then
+        for idV,lblTxt in pairs(bestMap) do
+            if not mounted[idV] then table.insert(list,{id=idV,label=lblTxt}) end
+        end
+    end
+    if sortByLabel then table.sort(list,function(a,b) return a.label<b.label end) end
+    return list,hasMountState
 end
+
+local pickerItems,pickerRows = {},{}
+local function renderPlateRows()
+    local rowHeight = 30
+    local first = math.max(1,math.floor(pScroll.CanvasPosition.Y/rowHeight)+1)
+    local count = math.max(0,math.min(#pickerItems-first+1,math.ceil(pScroll.AbsoluteSize.Y/rowHeight)+1))
+    for offset=1,count do
+        local slot = pickerRows[offset]
+        if not slot then
+            local button = bt(pScroll,"",u(1,-8,0,26),u(0,2,0,0),cd,6,1)
+            button.ZIndex = 10
+            slot = {button=button}
+            pickerRows[offset] = slot
+            button.Activated:Connect(function()
+                local item = slot.item
+                if not item then return end
+                selPlates[item.id] = not selPlates[item.id] or nil
+                button.BackgroundColor3 = selPlates[item.id] and ac or cd
+                updPickTxt()
+            end)
+        end
+        local index = first+offset-1
+        local item = pickerItems[index]
+        slot.item = item
+        slot.button.Position = u(0,2,0,(index-1)*rowHeight)
+        slot.button.Text = item.label
+        slot.button.BackgroundColor3 = selPlates[item.id] and ac or cd
+        slot.button.Visible = true
+    end
+    for offset=count+1,#pickerRows do
+        pickerRows[offset].item = nil
+        pickerRows[offset].button.Visible = false
+    end
+end
+pScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(renderPlateRows)
+pScroll:GetPropertyChangedSignal("AbsoluteSize"):Connect(renderPlateRows)
+
 local function refreshModal()
-    for _,ch in ipairs(pScroll:GetChildren()) do ch:Destroy() end
-    local items=scanMyPlates()
+    local items=scanMyPlates(true)
     local validSet={} for _,it in ipairs(items) do validSet[it.id]=true end
     for k in pairs(selPlates) do if not validSet[k] then selPlates[k]=nil end end
     updPickTxt()
-    for idx,it in ipairs(items) do
-        local isOn=selPlates[it.id]==true
-        local row=bt(pScroll,it.label,u(1,-8,0,26),u(0,2,0,(idx-1)*30),isOn and ac or cd,6,1) row.ZIndex=10
-        row.MouseButton1Click:Connect(function()
-            if selPlates[it.id] then selPlates[it.id]=nil row.BackgroundColor3=cd
-            else selPlates[it.id]=true row.BackgroundColor3=ac end
-            updPickTxt()
-        end)
-    end
+    pickerItems = items
     pScroll.CanvasSize=u(0,0,0,#items*30)
+    renderPlateRows()
     return #items
 end
 
-pickB.MouseButton1Click:Connect(function() if refreshModal()==0 then mSt.Text="Номера не найдены. Открой инвентарь." return end pModal.Visible=true end)
+local function checkMailPlates(ids)
+    if #ids==0 then return {} end
+    local items,hasMountState = scanMyPlates()
+    if not hasMountState then return nil,"Не удалось проверить номер на машине. Открой сейф и попробуй снова." end
+    local labels = {}
+    for _,item in ipairs(items) do labels[item.id] = item.label end
+    local names,invalid = {},false
+    for _,id in ipairs(ids) do
+        if labels[id] then
+            table.insert(names,labels[id])
+        else
+            selPlates[id] = nil
+            invalid = true
+        end
+    end
+    if invalid then
+        updPickTxt()
+        return nil,"Выбор изменился: номер на машине или недоступен. Проверь вложения."
+    end
+    return names
+end
+
+pickB.MouseButton1Click:Connect(function()
+    if refreshModal()==0 then
+        mSt.Text="Доступных номеров нет. Открой сейф для обновления инвентаря."
+        return
+    end
+    pModal.Visible=true
+end)
 pDoneB.MouseButton1Click:Connect(function() pModal.Visible=false updPickTxt() end)
 
-local run,trRun,takeRun,stRun,okC,lN=false,false,false,false,0,0
+local run,takeRun,stRun,okC,lN=false,false,false,0,0
 local sniperSession=0
-local lastTrader,takenPosts=nil,{}
+local takenPosts={}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
 
-local originalProperties,optConn={},nil
+local originalProperties,originalGuiProperties={},{}
+local sceneConnections,guiConnections={},{}
 local appliedOpt
 local darkBg=ui("Frame",{Size=u(1,0,1,60),Position=u(0,0,0,-60),BackgroundColor3=c(12,12,17),Visible=false,ZIndex=-1},g)
 
-local function setOptimizedProperty(object, property, value)
-    if object[property] == value then return end
-    local original = originalProperties[object]
+local function setOptimizedProperty(object, property, value, saved)
+    local current = object[property]
+    if current == value then return end
+    saved = saved or originalProperties
+    local original = saved[object]
     if not original then
         original = {}
-        originalProperties[object] = original
+        saved[object] = original
     end
-    if original[property] == nil then original[property] = object[property] end
+    if original[property] == nil then original[property] = current end
     object[property] = value
 end
 
@@ -436,51 +507,76 @@ local function cleanObj(v, config)
     end
 end
 
-local function applyCustomOpt(config)
-    if optConn then optConn:Disconnect() optConn=nil end
-    for object,properties in pairs(originalProperties) do
-        for property,value in pairs(properties) do
-            pcall(function() object[property] = value end)
-        end
+local function restoreOptimizedObject(saved,object)
+    local properties = saved[object]
+    if not properties then return end
+    saved[object] = nil
+    for property,value in pairs(properties) do
+        pcall(function() object[property] = value end)
     end
-    table.clear(originalProperties)
-    appliedOpt = config
+end
 
-    darkBg.Visible = config ~= nil and config.no3d
-    pcall(function() RS:Set3dRenderingEnabled(not darkBg.Visible) end)
-    if type(setfpscap)=="function" then pcall(setfpscap, config and config.fps or 0) end
-    if not config then return end
+local function clearOptimization(connections,saved)
+    for _,connection in ipairs(connections) do connection:Disconnect() end
+    table.clear(connections)
+    for object in pairs(saved) do restoreOptimizedObject(saved,object) end
+end
 
+local sceneOptions = {"shadows","materials","textures","particles","cleanup"}
+local function applySceneOpt(config)
+    clearOptimization(sceneConnections,originalProperties)
     if config.shadows or config.materials then
         pcall(function() setOptimizedProperty(settings().Rendering, "QualityLevel", Enum.QualityLevel.Level01) end)
     end
     if config.shadows then
         setOptimizedProperty(L, "GlobalShadows", false)
         setOptimizedProperty(L, "FogEnd", 9e9)
-        for _,effect in ipairs(L:GetChildren()) do
-            if effect:IsA("PostEffect") then setOptimizedProperty(effect, "Enabled", false) end
+    end
+    if not (config.shadows or config.materials or config.textures or config.particles or config.cleanup) then return end
+    local function optimizeDescendant(object)
+        if config.shadows and object.Parent==L and object:IsA("PostEffect") then
+            setOptimizedProperty(object,"Enabled",false)
         end
+        cleanObj(object,config)
     end
     for _,root in ipairs({workspace,P,L}) do
-        for _,v in ipairs(root:GetDescendants()) do cleanObj(v, config) end
+        for _,object in ipairs(root:GetDescendants()) do optimizeDescendant(object) end
+        table.insert(sceneConnections,root.DescendantAdded:Connect(optimizeDescendant))
+        table.insert(sceneConnections,root.DescendantRemoving:Connect(function(object)
+            restoreOptimizedObject(originalProperties,object)
+        end))
     end
+end
 
-    local pg=plr:FindFirstChild("PlayerGui")
-    if config.hideui and pg then
-        for _,gui in ipairs(pg:GetChildren()) do
-            if gui:IsA("ScreenGui") then setOptimizedProperty(gui, "Enabled", false) end
-        end
+local function applyGuiOpt(enabled)
+    clearOptimization(guiConnections,originalGuiProperties)
+    if not enabled then return end
+    local pg = plr:FindFirstChild("PlayerGui")
+    if not pg then return end
+    local function hideGui(gui)
+        if gui:IsA("ScreenGui") then setOptimizedProperty(gui,"Enabled",false,originalGuiProperties) end
     end
-    if config.shadows or config.materials or config.textures or config.particles or config.cleanup or config.hideui then
-        optConn=game.DescendantAdded:Connect(function(v)
-            if config.hideui and v:IsA("ScreenGui") and v.Parent==pg then
-                setOptimizedProperty(v, "Enabled", false)
-            elseif config.shadows and v:IsA("PostEffect") and v.Parent==L then
-                setOptimizedProperty(v, "Enabled", false)
-            elseif v:IsDescendantOf(workspace) or v:IsDescendantOf(P) or v:IsDescendantOf(L) then
-                cleanObj(v, config)
-            end
-        end)
+    for _,gui in ipairs(pg:GetChildren()) do hideGui(gui) end
+    table.insert(guiConnections,pg.ChildAdded:Connect(hideGui))
+    table.insert(guiConnections,pg.ChildRemoved:Connect(function(gui)
+        restoreOptimizedObject(originalGuiProperties,gui)
+    end))
+end
+
+local emptyOpt = {}
+local function applyCustomOpt(config)
+    local before,after = appliedOpt or emptyOpt,config or emptyOpt
+    appliedOpt = config
+    for _,key in ipairs(sceneOptions) do
+        if (not not before[key]) ~= (not not after[key]) then applySceneOpt(after) break end
+    end
+    if (not not before.hideui) ~= (not not after.hideui) then applyGuiOpt(after.hideui) end
+    if (not not before.no3d) ~= (not not after.no3d) then
+        darkBg.Visible = after.no3d == true
+        pcall(function() RS:Set3dRenderingEnabled(not darkBg.Visible) end)
+    end
+    if before.fps ~= after.fps and type(setfpscap)=="function" then
+        pcall(setfpscap,after.fps or 0)
     end
 end
 
@@ -507,9 +603,10 @@ optApplyB.MouseButton1Click:Connect(function()
 end)
 
 local modernTheme,menuAnimating = false,false
+local refreshResponsiveText
 do
     local classicColors = {bg,sd,cd,ac,tx,sb,strokeColor,danger}
-    local modernColors = {c(13,18,31),c(19,27,44),c(29,40,62),c(75,104,213),c(244,247,255),c(157,175,205),c(54,69,101),c(173,58,79)}
+    local modernColors = {c(14,17,29),c(21,27,46),c(31,40,64),c(79,99,213),c(246,249,255),c(171,188,219),c(53,68,103),c(177,64,89)}
     local modal = ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p7,10,1)
     local title = lb(modal,"Оформление меню",u(1,-24,0,34),u(0,12,0,8),tx,18)
     title.TextSize,title.ZIndex = 15,9
@@ -518,7 +615,15 @@ do
     local back = bt(modal,"Готово",u(1,-24,0,36),u(0,12,1,-48),cd,8,1)
     classic.ZIndex,modern.ZIndex,back.ZIndex = 9,9,9
     local headerTint = Instance.new("UIGradient",tp)
-    headerTint.Color = ColorSequence.new(c(255,255,255),c(144,169,231))
+    headerTint.Color = ColorSequence.new(c(255,255,255),c(128,151,245))
+    local surfaceTint = Instance.new("UIGradient",m)
+    surfaceTint.Color = ColorSequence.new(c(255,255,255),c(166,180,233))
+    surfaceTint.Rotation = 65
+    local divider = ui("Frame",{
+        Size=u(1,-16,0,1), Position=u(0,8,1,-1), BorderSizePixel=0, BackgroundColor3=c(111,148,255),
+    },tp)
+    local dividerTint = Instance.new("UIGradient",divider)
+    dividerTint.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0.9),NumberSequenceKeypoint.new(0.33,0.12),NumberSequenceKeypoint.new(1,1)})
 
     local function setTheme(useModern)
         local from,to = classicColors,modernColors
@@ -545,31 +650,32 @@ do
         end
 
         local navWidth = useModern and 112 or 98
-        sdF.Size = u(0,navWidth,1,-34)
+        sdF.Size = u(navWidth/435,0,1,-34)
         for _,page in ipairs(pgs) do
-            page.Position = u(0,navWidth+7,0,39)
-            page.Size = u(1,-navWidth-14,1,-44)
+            page.Position = u(navWidth/435,7,0,39)
+            page.Size = u(1-navWidth/435,-14,1,-44)
         end
         local navHeight = useModern and 34 or 28
         for index,button in ipairs(tbs) do
-            button.Size = u(1,-12,0,navHeight)
-            button.Position = u(0,6,0,8+(index-1)*(navHeight+6))
+            button.Size = u(1,-12,navHeight/286,0)
+            button.Position = u(0,6,(8+(index-1)*(navHeight+6))/286,0)
             button.TextSize = useModern and 12 or 11
         end
         mB.Size,cB.Size = u(0,useModern and 28 or 24,0,useModern and 26 or 22),u(0,useModern and 28 or 24,0,useModern and 26 or 22)
         mB.Position,cB.Position = u(1,useModern and -68 or -54,0,useModern and 4 or 6),u(1,useModern and -34 or -27,0,useModern and 4 or 6)
-        for _,button in ipairs({optOpenB,customB,tB,trB,stAutoB,mSendB,mTakeB}) do
+        for _,button in ipairs({optOpenB,customB,tB,stAutoB,mSendB,mTakeB}) do
             button.TextSize = useModern and 13 or 11
             button:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 10 or 8)
         end
         m:FindFirstChildOfClass("UICorner").CornerRadius = UDim.new(0,useModern and 14 or 10)
-        headerTint.Enabled = useModern
+        headerTint.Enabled,surfaceTint.Enabled,divider.Visible = useModern,useModern,useModern
         menuTitle.TextSize = useModern and 16 or 11
         menuTitle.TextColor3 = useModern and tx or ac
         oB.Size = useModern and u(0,104,0,34) or u(0,86,0,28)
         oB.TextSize = useModern and 13 or 11
         classic.BackgroundColor3 = useModern and cd or ac
         modern.BackgroundColor3 = useModern and ac or cd
+        if refreshResponsiveText then refreshResponsiveText() end
     end
 
     customB.Activated:Connect(function() modal.Visible = true end)
@@ -579,12 +685,93 @@ do
     setTheme(false)
 end
 
+do
+    local baseWidth,baseHeight = m.Size.X.Offset,m.Size.Y.Offset
+    local fonts = {}
+    local emphasis = {[menuTitle]=true,[optOpenB]=true,[customB]=true,[tB]=true,[stAutoB]=true,[mSendB]=true,[mTakeB]=true}
+    local function adaptFields(parent,width,height)
+        for _,object in ipairs(parent:GetChildren()) do
+            if not object:IsA("GuiObject") then continue end
+            local size,position = object.Size,object.Position
+            local childWidth,childHeight = size.X.Scale*width+size.X.Offset,size.Y.Scale*height+size.Y.Offset
+            object.Size = u(size.X.Scale+size.X.Offset/width,0,size.Y.Scale+size.Y.Offset/height,0)
+            object.Position = u(position.X.Scale+position.X.Offset/width,0,position.Y.Scale+position.Y.Offset/height,0)
+            if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+                fonts[object] = object.TextSize
+            end
+            if not object:IsA("ScrollingFrame") and childWidth>0 and childHeight>0 then
+                adaptFields(object,childWidth,childHeight)
+            end
+        end
+    end
+    for _,page in ipairs(pgs) do
+        adaptFields(page,baseWidth*page.Size.X.Scale+page.Size.X.Offset,baseHeight*page.Size.Y.Scale+page.Size.Y.Offset)
+    end
+    adaptFields(dlg,baseWidth,baseHeight)
+    fonts[menuTitle] = menuTitle.TextSize
+    for _,button in ipairs(tbs) do fonts[button] = button.TextSize end
+    refreshResponsiveText = function()
+        local factor = math.clamp(math.min(m.Size.X.Offset/baseWidth,m.Size.Y.Offset/baseHeight),1,1.35)
+        for label,original in pairs(fonts) do
+            local size = original
+            if modernTheme then
+                if label == menuTitle then size = 16
+                elseif emphasis[label] then size = math.max(size,13)
+                else size += 1 end
+            end
+            label.TextSize = math.floor(size*factor+0.5)
+        end
+    end
+    m:GetPropertyChangedSignal("Size"):Connect(refreshResponsiveText)
+end
+
 local tog
 do
     local TweenService = game:GetService("TweenService")
     local menuOpen = true
-    local restingPosition,restingSize
     local tween,animationId = nil,0
+    local phase = Instance.new("NumberValue",g)
+    phase.Value = 1
+    local morph = ui("Frame",{
+        Size=u(1,0,1,0), BackgroundTransparency=1, Visible=false, Active=true, ZIndex=27,
+    },g)
+    local bands = {}
+    for index=1,22 do
+        local band = ui("Frame",{
+            BorderSizePixel=0, BackgroundColor3=c(54,73,151), ZIndex=28,
+        },morph)
+        local tint = Instance.new("UIGradient",band)
+        tint.Color = ColorSequence.new(c(105,124,255),c(113,218,255))
+        bands[index] = band
+    end
+
+    local function absolute(value,area)
+        return Vector2.new(value.X.Scale*area.X+value.X.Offset,value.Y.Scale*area.Y+value.Y.Offset)
+    end
+
+    local function drawMorph(progress)
+        if not menuAnimating then return end
+        local area = g.AbsoluteSize
+        local buttonPos,buttonSize = absolute(oB.Position,area),absolute(oB.Size,area)
+        local windowPos,windowSize = absolute(m.Position,area),absolute(m.Size,area)
+        local buttonCenter,windowCenter = buttonPos+buttonSize/2,windowPos+windowSize/2
+        local arc = math.sin(math.pi*progress)
+        local height = buttonSize.Y+(windowSize.Y-buttonSize.Y)*progress
+        local top = buttonCenter.Y+(windowCenter.Y-buttonCenter.Y)*progress-height/2-22*arc
+        for index,band in ipairs(bands) do
+            local row = (index-0.5)/#bands
+            local spread = progress^(0.65+row*1.15)
+            local width = buttonSize.X+(windowSize.X-buttonSize.X)*spread
+            local center = buttonCenter.X+(windowCenter.X-buttonCenter.X)*spread+arc*24*math.sin(math.pi*row)
+            band.Position = u(0,center-width/2,0,top+(index-1)*height/#bands)
+            band.Size = u(0,width,0,height/#bands+1)
+            local fade = math.max(0,progress-0.79)*4.8+math.max(0,0.065-progress)*13
+            band.BackgroundTransparency = math.clamp(0.09+0.25*row+fade,0,1)
+        end
+        m.Visible = progress>=0.86
+        oB.Visible = progress<=0.075
+    end
+    phase:GetPropertyChangedSignal("Value"):Connect(function() drawMorph(phase.Value) end)
 
     tog = function(open,immediate)
         if open == nil then open = not menuOpen end
@@ -594,51 +781,25 @@ do
         local id = animationId
         if tween then tween:Cancel() tween = nil end
 
-        if restingPosition then
-            m.Position,m.Size = restingPosition,restingSize
-        end
-        restingPosition,restingSize = m.Position,m.Size
-        menuAnimating = false
-        m.ClipsDescendants = false
+        local target = open and 1 or 0
         if not modernTheme or immediate then
+            menuAnimating,morph.Visible = false,false
+            phase.Value = target
             m.Visible,oB.Visible = open,not open
-            restingPosition,restingSize = nil,nil
             return
         end
 
-        menuAnimating = true
-        m.ClipsDescendants = true
-        local buttonPosition,buttonSize = oB.AbsolutePosition,oB.AbsoluteSize
-        local center = buttonPosition+buttonSize/2
-        local collapsedSize = u(0,math.max(24,buttonSize.X),0,math.max(16,buttonSize.Y))
-        local collapsedPosition = u(0,buttonPosition.X,0,buttonPosition.Y)
-        local fullPosition,fullSize = restingPosition,restingSize
-        if open then m.Position,m.Size = collapsedPosition,collapsedSize end
-        m.Visible,oB.Visible = true,false
-        local fullTopLeft = open and Vector2.new(
-            g.AbsoluteSize.X*fullPosition.X.Scale+fullPosition.X.Offset,
-            g.AbsoluteSize.Y*fullPosition.Y.Scale+fullPosition.Y.Offset
-        ) or m.AbsolutePosition
-        local fullCenter = fullTopLeft+Vector2.new(fullSize.X.Offset/2,fullSize.Y.Offset/2)
-        local neckSize = Vector2.new(math.max(64,fullSize.X.Offset*0.32),math.max(32,fullSize.Y.Offset*0.65))
-        local neckCenter = center:Lerp(fullCenter,0.58)+Vector2.new(0,-14)
-
-        task.spawn(function()
-            local function step(duration,position,size,style,direction)
-                tween = TweenService:Create(m,TweenInfo.new(duration,style,direction),{Position=position,Size=size})
-                tween:Play()
-                return tween.Completed:Wait() == Enum.PlaybackState.Completed and animationId == id
-            end
-            local neck = u(0,neckCenter.X-neckSize.X/2,0,neckCenter.Y-neckSize.Y/2)
-            if not step(0.14,neck,u(0,neckSize.X,0,neckSize.Y),Enum.EasingStyle.Quad,Enum.EasingDirection.Out) then return end
-            if not step(0.2,open and fullPosition or collapsedPosition,open and fullSize or collapsedSize,
-                Enum.EasingStyle.Cubic,open and Enum.EasingDirection.Out or Enum.EasingDirection.In) then return end
+        menuAnimating,morph.Visible = true,true
+        drawMorph(phase.Value)
+        local duration = math.max(0.09,(open and 0.47 or 0.39)*math.abs(target-phase.Value))
+        tween = TweenService:Create(phase,TweenInfo.new(duration,Enum.EasingStyle.Quart,Enum.EasingDirection.InOut),{Value=target})
+        tween.Completed:Once(function(state)
+            if state ~= Enum.PlaybackState.Completed or animationId ~= id then return end
             tween = nil
+            menuAnimating,morph.Visible = false,false
             m.Visible,oB.Visible = open,not open
-            m.Position,m.Size = fullPosition,fullSize
-            m.ClipsDescendants,menuAnimating = false,false
-            restingPosition,restingSize = nil,nil
         end)
+        tween:Play()
     end
     g.Destroying:Connect(function() if tween then tween:Cancel() end end)
 end
@@ -674,13 +835,15 @@ do
     local function readPrice(card)
         local body = card:FindFirstChild("Body")
         local priceBox = body and body:FindFirstChild("CanvasGroup")
-        if not priceBox then return end
-        local children = priceBox:GetChildren()
-        local price = parsePrice(children[3],false)
-        if price then return fmtNum(price).." ₽" end
-        for _,label in ipairs(children) do
-            price = parsePrice(label,true)
+        if priceBox then
+            local price = parsePrice(priceBox:GetChildren()[3],false)
             if price then return fmtNum(price).." ₽" end
+        end
+        for _,root in ipairs(priceBox and {priceBox,card} or {card}) do
+            for _,label in ipairs(root:GetChildren()) do
+                local price = parsePrice(label,true)
+                if price then return fmtNum(price).." ₽" end
+            end
         end
     end
 
@@ -712,9 +875,7 @@ do
         return prices,count,total
     end
 
-    local function observeMiniRoll(pg)
-        local plates = pg and pg:FindFirstChild("PlatesUI")
-        local mini = plates and plates:FindFirstChild("RollMini")
+    local function observeMiniRoll(mini)
         local prices,count,total
         if mini and mini.Visible then prices,count,total = readMiniPrices(mini,3) end
         if not prices or count == 0 then
@@ -801,25 +962,96 @@ do
         afkRolls.batchPrice = nil
     end
 
-    task.spawn(function()
-        while g.Parent do
-            local pg = plr:FindFirstChild("PlayerGui")
-            local attached = results and results:IsDescendantOf(plr)
-            if not attached then
-                local window = pg and pg:FindFirstChild("RollWindow",true)
-                results = window and window:FindFirstChild("Results")
-            end
-            if results then
+    local mini,stopResults,stopMini
+    local resultsDirty,miniDirty,scanQueued = false,false,false
+    local function queueScan(fullChanged,miniChanged)
+        resultsDirty,miniDirty = resultsDirty or fullChanged,miniDirty or miniChanged
+        if scanQueued then return end
+        scanQueued = true
+        task.defer(function()
+            scanQueued = false
+            if not g.Parent then return end
+            if resultsDirty and results then
                 for _,card in ipairs(results:GetChildren()) do observeCard(card,not afkRolls.available) end
                 afkRolls.available = true
+                for card in pairs(seen) do
+                    if card.Parent ~= results then seen[card] = nil end
+                end
             end
-            for card in pairs(seen) do
-                if card.Parent ~= results then seen[card] = nil end
+            if miniDirty then observeMiniRoll(mini) end
+            resultsDirty,miniDirty = false,false
+        end)
+    end
+
+    local function watchRollTree(root,changed)
+        local watched = {}
+        local function watch(object)
+            if not object:IsA("GuiObject") then return end
+            local connections = {object:GetPropertyChangedSignal("Visible"):Connect(changed)}
+            if object:IsA("TextLabel") then
+                table.insert(connections,object:GetPropertyChangedSignal("Text"):Connect(changed))
             end
-            observeMiniRoll(pg)
-            task.wait(0.2)
+            watched[object] = connections
         end
+        local function release(object)
+            local connections = watched[object]
+            if not connections then return end
+            for _,connection in ipairs(connections) do connection:Disconnect() end
+            watched[object] = nil
+        end
+        watch(root)
+        for _,object in ipairs(root:GetDescendants()) do watch(object) end
+        local inserted = root.DescendantAdded:Connect(function(object) watch(object) changed() end)
+        local removed = root.DescendantRemoving:Connect(function(object) release(object) changed() end)
+        return function()
+            inserted:Disconnect()
+            removed:Disconnect()
+            for object in pairs(watched) do release(object) end
+        end
+    end
+
+    local function bindRollTrees()
+        local pg = plr:FindFirstChild("PlayerGui")
+        local plates = pg and pg:FindFirstChild("PlatesUI")
+        local window = plates and plates:FindFirstChild("RollWindow") or (pg and pg:FindFirstChild("RollWindow",true))
+        local nextResults = window and window:FindFirstChild("Results")
+        local nextMini = plates and plates:FindFirstChild("RollMini")
+        if nextResults ~= results then
+            if stopResults then stopResults() stopResults = nil end
+            results = nextResults
+            table.clear(seen)
+            latestCard = nil
+            if results then stopResults = watchRollTree(results,function() queueScan(true,false) end) end
+            queueScan(true,false)
+        end
+        if nextMini ~= mini then
+            if stopMini then stopMini() stopMini = nil end
+            mini = nextMini
+            table.clear(miniPrices)
+            if mini then stopMini = watchRollTree(mini,function() queueScan(false,true) end) end
+            queueScan(false,true)
+        end
+    end
+
+    local rollRootNames = {PlayerGui=true,PlatesUI=true,RollWindow=true,Results=true,RollMini=true}
+    local bindQueued = false
+    local function onRollTreeChanged(object)
+        if bindQueued or not rollRootNames[object.Name] then return end
+        bindQueued = true
+        task.defer(function()
+            bindQueued = false
+            if g.Parent then bindRollTrees() end
+        end)
+    end
+    local rollAdded = plr.DescendantAdded:Connect(onRollTreeChanged)
+    local rollRemoved = plr.DescendantRemoving:Connect(onRollTreeChanged)
+    g.Destroying:Connect(function()
+        rollAdded:Disconnect()
+        rollRemoved:Disconnect()
+        if stopResults then stopResults() end
+        if stopMini then stopMini() end
     end)
+    bindRollTrees()
 end
 
 local exitAfkMode
@@ -1089,7 +1321,7 @@ oB.InputBegan:Connect(function(i)
     end
 end)
 
-U.InputChanged:Connect(function(i)
+local dragMove = U.InputChanged:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then
         if dragWin and not menuAnimating then
             local d=i.Position-winStart
@@ -1101,7 +1333,7 @@ U.InputChanged:Connect(function(i)
     end
 end)
 
-U.InputEnded:Connect(function(i)
+local dragEnd = U.InputEnded:Connect(function(i)
     if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
         dragWin=false
         if draggingBtn then
@@ -1114,14 +1346,14 @@ end)
 cB.MouseButton1Click:Connect(function() dlg.Visible=true end)
 nB.MouseButton1Click:Connect(function() dlg.Visible=false end)
 yB.MouseButton1Click:Connect(function()
-    run,trRun,takeRun,stRun=false,false,false,false
+    run,takeRun,stRun=false,false,false
     if appliedOpt then applyCustomOpt(nil) end
     g:Destroy()
 end)
 bindB.MouseButton1Click:Connect(function() waitingBind=true bindB.Text="Нажми клавишу..." end)
 afkB.MouseButton1Click:Connect(function() afkOn=not afkOn afkB.BackgroundColor3=afkOn and ac or bg afkB.Text=afkOn and "ON" or "OFF" end)
-plr.Idled:Connect(function() if afkOn and g.Parent then pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end end)
-U.InputBegan:Connect(function(i,gp)
+local idleConnection = plr.Idled:Connect(function() if afkOn and g.Parent then pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end end)
+local hotkey = U.InputBegan:Connect(function(i,gp)
     if not g.Parent then return end
     if waitingBind and i.UserInputType==Enum.UserInputType.Keyboard then waitingBind=false menuKey=i.KeyCode bindB.Text=i.KeyCode.Name return end
     if not gp and i.KeyCode==menuKey then
@@ -1129,6 +1361,12 @@ U.InputBegan:Connect(function(i,gp)
         dlg.Visible=false
         tog()
     end
+end)
+g.Destroying:Connect(function()
+    dragMove:Disconnect()
+    dragEnd:Disconnect()
+    idleConnection:Disconnect()
+    hotkey:Disconnect()
 end)
 local function formatBoxPost(item)
     local sender=tostring(item.fromName or item.senderName or item.from or "Игрок")
@@ -1161,16 +1399,16 @@ end
 
 sumBox.FocusLost:Connect(function() local val=parseM(sumBox.Text) if val>0 then sumBox.Text=tostring(val) mSt.Text=string.format("Сумма: %s ₽",fmtNum(val)) end end)
 
-mSendB.MouseButton1Click:Connect(function()
+local function sendMail()
     local clean=idBox.Text:gsub("%s+","")
     local amt=parseM(sumBox.Text)
     if amt>0 then sumBox.Text=tostring(amt) end
-    local platesArr,plateNames={},{}
-    local allItems=scanMyPlates()
-    local nameMap={} for _,it in ipairs(allItems) do nameMap[it.id]=it.label end
-    for k in pairs(selPlates) do table.insert(platesArr,k) table.insert(plateNames,nameMap[k] or k) end
+    local platesArr={}
+    for k in pairs(selPlates) do table.insert(platesArr,k) end
     if clean=="" then mSt.Text="Ошибка: впиши юзернейм." return end
     if amt<=0 and #platesArr==0 then mSt.Text="Ошибка: выбери номера или впиши сумму > 0." return end
+    local plateNames,selectionError = checkMailPlates(platesArr)
+    if not plateNames then mSt.Text=selectionError return end
     mSt.Text="Ищу игрока..."
 
     local okLook,lookRes=pcall(function() return PS:InvokeServer("look",clean) end)
@@ -1180,38 +1418,53 @@ mSendB.MouseButton1Click:Connect(function()
     local uid=0
     if type(lookRes)=="table" then
         local uData=lookRes.user or lookRes.player or lookRes.data or lookRes
-        uid=tonumber(uData.userId) or tonumber(uData.id) or tonumber(uData.uid) or 0
+        if type(uData)=="table" then
+            uid=tonumber(uData.userId) or tonumber(uData.id) or tonumber(uData.uid) or 0
+        end
     end
     if uid<=0 then local okId,apiId=pcall(function() return P:GetUserIdFromNameAsync(clean) end) if okId and apiId then uid=apiId end end
     if uid<=0 then mSt.Text="Ошибка: не удалось получить ID игрока." return end
 
     task.wait(0.2)
+    if not g.Parent then return end
+    plateNames,selectionError = checkMailPlates(platesArr)
+    if not plateNames then mSt.Text=selectionError return end
     local ok,res=pcall(function() return PS:InvokeServer("send",uid,platesArr,{},amt) end)
-    if ok then
-        if type(res)=="table" and res.ok==false then
-            local errTxt=tostring(res.err or "ошибка")
-            mSt.Text="Отказ: "..errTxt
-            if errTxt:lower():find("нет") or errTxt:lower():find("найден") or errTxt:lower():find("принадлежит") then
-                for _,idV in ipairs(platesArr) do sentPlates[idV]=true end
-                selPlates={} updPickTxt()
-            end
-        else
-            for _,idV in ipairs(platesArr) do sentPlates[idV]=true end
-            mSt.Text="Отправлено -> "..clean
-            local pStr=#plateNames>0 and table.concat(plateNames,", ") or "без номеров"
-            local shortLine=string.format("Отправлено (%s): %s / %s ₽",clean,pStr,fmtNum(amt))
-            local tLines={
-                string.format("<font color=\"#9191A5\">Получатель:</font> <b>%s</b>",clean),
-                string.format("<font color=\"#9191A5\">Сумма:</font> <font color=\"#4ADE80\"><b>%s ₽</b></font>",fmtNum(amt))
-            }
-            if #plateNames>0 then
-                table.insert(tLines,"<font color=\"#9191A5\">Номера:</font>")
-                for _,pn in ipairs(plateNames) do table.insert(tLines,fmtPlateRich(pn)) end
-            end
-            addMailLog(shortLine,table.concat(tLines,"\n"))
-            selPlates={} updPickTxt()
-        end
-    else mSt.Text="Ошибка отправки" end
+    if not g.Parent then return end
+    if not ok or type(res)~="table" or not res.ok then
+        mSt.Text = ok and type(res)=="table" and res.err and ("Отказ: "..tostring(res.err)) or "Отправка не подтверждена. Проверь исходящие."
+        return
+    end
+
+    for _,id in ipairs(platesArr) do
+        sentPlates[id]=true
+        selPlates[id]=nil
+    end
+    mSt.Text="Отправлено -> "..clean
+    local pStr=#plateNames>0 and table.concat(plateNames,", ") or "без номеров"
+    local shortLine=string.format("Отправлено (%s): %s / %s ₽",clean,pStr,fmtNum(amt))
+    local tLines={
+        string.format("<font color=\"#9191A5\">Получатель:</font> <b>%s</b>",clean),
+        string.format("<font color=\"#9191A5\">Сумма:</font> <font color=\"#4ADE80\"><b>%s ₽</b></font>",fmtNum(amt))
+    }
+    if #plateNames>0 then
+        table.insert(tLines,"<font color=\"#9191A5\">Номера:</font>")
+        for _,pn in ipairs(plateNames) do table.insert(tLines,fmtPlateRich(pn)) end
+    end
+    addMailLog(shortLine,table.concat(tLines,"\n"))
+    updPickTxt()
+end
+
+local sendInProgress = false
+mSendB.Activated:Connect(function()
+    if sendInProgress then return end
+    sendInProgress = true
+    mSendB.Text = "ОТПРАВЛЯЮ…"
+    local ok = pcall(sendMail)
+    sendInProgress = false
+    if not g.Parent then return end
+    mSendB.Text = "ОТПРАВИТЬ"
+    if not ok then mSt.Text = "Ошибка отправки. Проверь исходящие." end
 end)
 
 mTakeB.MouseButton1Click:Connect(function()
@@ -1308,41 +1561,6 @@ stAutoB.MouseButton1Click:Connect(function()
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
 end)
 
-trB.MouseButton1Click:Connect(function()
-    trRun=not trRun
-    trB.BackgroundColor3=trRun and danger or ac
-    trB.Text=trRun and "АВТО-ТОРГАШ: ВКЛ" or "АВТО-ТОРГАШ: ВЫКЛ"
-    if not trRun then trSt.Text="Статус: ВЫКЛ" return end
-    lastTrader=nil
-    task.spawn(function()
-        while trRun do
-            local npc=workspace:FindFirstChild("TraderWalker")
-            if npc and npc~=lastTrader then
-                local hrp=plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                local nHrp=npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart")
-                if nHrp and hrp then
-                    local old=hrp.CFrame
-                    trSt.Text="Пришёл новый Торгаш. Лечу скупать..."
-                    hrp.CFrame=nHrp.CFrame*CFrame.new(0,0,-4)
-                    local pr=npc:FindFirstChildWhichIsA("ProximityPrompt",true)
-                    if pr and fireproximityprompt then task.wait(0.2) fireproximityprompt(pr) end
-                    task.wait(0.35)
-                    for i=1,4 do
-                        if not trRun then break end
-                        if traderEnabled[i] then pcall(function() TR:InvokeServer("buy",i) end) task.wait(0.25) end
-                    end
-                    if hrp then hrp.CFrame=old end
-                    lastTrader=npc
-                    trSt.Text="Выбранные слоты обработаны. Жду следующего Торгаша..."
-                end
-            elseif not npc then
-                lastTrader=nil
-                trSt.Text="Торгаша нет на карте. Жду прихода..."
-            end
-            task.wait(2)
-        end
-    end)
-end)
 local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC end
 local function wN() local gp=math.max(1.4,tonumber(dBox.Text) or 1.5) local df=os.clock()-lN if df<gp then task.wait(gp-df) end lN=os.clock() end
 local function getP(t) if type(t)~="table" then return 0 end local d=t.lot or t return tonumber(d.p) or tonumber(d.ask) or tonumber(d.start) or tonumber(d.price) or 0 end
