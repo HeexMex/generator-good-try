@@ -320,11 +320,23 @@ local sniperSession=0
 local lastTrader,takenPosts=nil,{}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
 
-local origMats,origGuis,optConn={},{},nil
+local originalProperties,optConn={},nil
+local appliedOpt
 local darkBg=ui("Frame",{Size=u(1,0,1,60),Position=u(0,0,0,-60),BackgroundColor3=c(12,12,17),Visible=false,ZIndex=-1},g)
 
-local function cleanObj(v)
-    if optCfg.cleanup then
+local function setOptimizedProperty(object, property, value)
+    if object[property] == value then return end
+    local original = originalProperties[object]
+    if not original then
+        original = {}
+        originalProperties[object] = original
+    end
+    if original[property] == nil then original[property] = object[property] end
+    object[property] = value
+end
+
+local function cleanObj(v, config)
+    if config.cleanup then
         if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("CharacterMesh") or v:IsA("ShirtGraphic") then
             pcall(function() v:Destroy() end) return
         elseif v:IsA("BasePart") and not v.CanCollide and not v:FindFirstAncestor("TraderWalker") and not v:FindFirstAncestorOfClass("Player") then
@@ -332,58 +344,69 @@ local function cleanObj(v)
         end
     end
     if v:IsA("BasePart") then
-        if optCfg.materials then
-            if not origMats[v] then origMats[v]=v.Material end
-            v.Material,v.Reflectance,v.CastShadow=Enum.Material.SmoothPlastic,0,false
-        else
-            if origMats[v] then v.Material=origMats[v] end
-            v.CastShadow=not optCfg.shadows
+        if config.materials then
+            setOptimizedProperty(v, "Material", Enum.Material.SmoothPlastic)
+            setOptimizedProperty(v, "Reflectance", 0)
         end
+        if config.materials or config.shadows then setOptimizedProperty(v, "CastShadow", false) end
     elseif v:IsA("Decal") or v:IsA("Texture") then
-        if not v:FindFirstAncestor("PlatesUI") then v.Transparency=optCfg.textures and 1 or 0 end
+        if config.textures and not v:FindFirstAncestor("PlatesUI") then setOptimizedProperty(v, "Transparency", 1) end
     elseif v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam") or v:IsA("Sparkles") or v:IsA("Fire") or v:IsA("Smoke") then
-        v.Enabled=not optCfg.particles
-        if optCfg.particles and v:IsA("ParticleEmitter") then pcall(function() v:Clear() end) end
+        if config.particles then setOptimizedProperty(v, "Enabled", false) end
     end
 end
 
-local function applyCustomOpt()
-    pcall(function() settings().Rendering.QualityLevel=(optCfg.shadows or optCfg.materials) and Enum.QualityLevel.Level01 or Enum.QualityLevel.Automatic end)
-    L.GlobalShadows=not optCfg.shadows
-    L.FogEnd=optCfg.shadows and 9e9 or 100000
-    for _,v in ipairs(L:GetChildren()) do if v:IsA("PostEffect") then v.Enabled=not optCfg.shadows end end
-    for _,root in ipairs({workspace,workspace.CurrentCamera,P,L}) do
-        if root then for _,v in ipairs(root:GetDescendants()) do cleanObj(v) end end
-    end
-    local pg=plr:FindFirstChild("PlayerGui")
-    if pg then
-        for _,gui in ipairs(pg:GetChildren()) do
-            if gui:IsA("ScreenGui") then
-                if optCfg.hideui then
-                    if origGuis[gui]==nil then origGuis[gui]=gui.Enabled end
-                    gui.Enabled=false
-                elseif origGuis[gui]~=nil then
-                    gui.Enabled=origGuis[gui]
-                    origGuis[gui]=nil
-                end
-            end
+local function applyCustomOpt(config)
+    if optConn then optConn:Disconnect() optConn=nil end
+    for object,properties in pairs(originalProperties) do
+        for property,value in pairs(properties) do
+            pcall(function() object[property] = value end)
         end
     end
-    if optConn then optConn:Disconnect() optConn=nil end
-    if optCfg.materials or optCfg.textures or optCfg.particles or optCfg.cleanup or optCfg.hideui then
+    table.clear(originalProperties)
+    appliedOpt = config
+
+    darkBg.Visible = config ~= nil and config.no3d
+    pcall(function() RS:Set3dRenderingEnabled(not darkBg.Visible) end)
+    if type(setfpscap)=="function" then pcall(setfpscap, config and config.fps or 0) end
+    if not config then return end
+
+    if config.shadows or config.materials then
+        pcall(function() setOptimizedProperty(settings().Rendering, "QualityLevel", Enum.QualityLevel.Level01) end)
+    end
+    if config.shadows then
+        setOptimizedProperty(L, "GlobalShadows", false)
+        setOptimizedProperty(L, "FogEnd", 9e9)
+        for _,effect in ipairs(L:GetChildren()) do
+            if effect:IsA("PostEffect") then setOptimizedProperty(effect, "Enabled", false) end
+        end
+    end
+    for _,root in ipairs({workspace,P,L}) do
+        for _,v in ipairs(root:GetDescendants()) do cleanObj(v, config) end
+    end
+
+    local pg=plr:FindFirstChild("PlayerGui")
+    if config.hideui and pg then
+        for _,gui in ipairs(pg:GetChildren()) do
+            if gui:IsA("ScreenGui") then setOptimizedProperty(gui, "Enabled", false) end
+        end
+    end
+    if config.shadows or config.materials or config.textures or config.particles or config.cleanup or config.hideui then
         optConn=game.DescendantAdded:Connect(function(v)
-            if optCfg.hideui and v:IsA("ScreenGui") and pg and v.Parent==pg then
-                if origGuis[v]==nil then origGuis[v]=v.Enabled end
-                v.Enabled=false
-            elseif v:IsDescendantOf(workspace) or (workspace.CurrentCamera and v:IsDescendantOf(workspace.CurrentCamera)) then
-                cleanObj(v)
+            if config.hideui and v:IsA("ScreenGui") and v.Parent==pg then
+                setOptimizedProperty(v, "Enabled", false)
+            elseif config.shadows and v:IsA("PostEffect") and v.Parent==L then
+                setOptimizedProperty(v, "Enabled", false)
+            elseif v:IsDescendantOf(workspace) or v:IsDescendantOf(P) or v:IsDescendantOf(L) then
+                cleanObj(v, config)
             end
         end)
     end
-    darkBg.Visible=optCfg.no3d
-    pcall(function() RS:Set3dRenderingEnabled(not optCfg.no3d) end)
-    if type(setfpscap)=="function" then pcall(function() setfpscap(optCfg.fps) end) end
 end
+
+g.Destroying:Connect(function()
+    if appliedOpt then applyCustomOpt(nil) end
+end)
 
 for _,it in ipairs(optItems) do
     local sw,rw=optBtns[it.k],optRows[it.k]
@@ -395,10 +418,145 @@ bindTip(fpsRow,"<b>Лимит FPS</b>\n<font color=\"#B0B0C8\">Ограничи�
 fpsBox.FocusLost:Connect(function() local val=tonumber((fpsBox.Text:gsub("%D",""))) or 30 optCfg.fps=val fpsBox.Text=tostring(val) end)
 optOpenB.MouseButton1Click:Connect(function() optModal.Visible=true end)
 optCloseB.MouseButton1Click:Connect(function() tipBox.Visible=false optModal.Visible=false end)
-optApplyB.MouseButton1Click:Connect(function() local val=tonumber((fpsBox.Text:gsub("%D",""))) optCfg.fps=val or 30 fpsBox.Text=tostring(optCfg.fps) applyCustomOpt() tipBox.Visible=false optModal.Visible=false end)
+optApplyB.MouseButton1Click:Connect(function()
+    optCfg.fps=tonumber((fpsBox.Text:gsub("%D",""))) or 30
+    fpsBox.Text=tostring(optCfg.fps)
+    applyCustomOpt(table.clone(optCfg))
+    tipBox.Visible=false
+    optModal.Visible=false
+end)
 
 local function tog(s) if s==nil then s=not m.Visible end m.Visible,oB.Visible=s,not s end
 mB.MouseButton1Click:Connect(function() tog(false) end)
+
+local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
+local exitAfkMode
+do
+    local openAfk = bt(p7,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,200),cd,8,1)
+    local overlay = ui("Frame", {
+        Size=u(1,0,1,0), BackgroundColor3=bg, BackgroundTransparency=0.15,
+        Visible=false, Active=true, ZIndex=30, BorderSizePixel=0,
+    },g)
+    local card = ui("Frame", {
+        Size=u(0,520,0,336), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
+        BackgroundColor3=bg, ZIndex=31,
+    },overlay,12,1)
+    local scale = Instance.new("UIScale",card)
+    local function fitCard()
+        local area = overlay.AbsoluteSize
+        scale.Scale = math.clamp(math.min((area.X-16)/520,(area.Y-16)/336),0.25,1)
+    end
+    overlay:GetPropertyChangedSignal("AbsoluteSize"):Connect(fitCard)
+
+    local green = c(74,222,128)
+    local function frame(parent,size,position,color,radius)
+        return ui("Frame",{
+            Size=size, Position=position, BackgroundColor3=color or sd,
+            BorderSizePixel=0, ZIndex=32,
+        },parent,radius or 8,1)
+    end
+    local function text(parent,value,size,position,color,alignment)
+        local label = lb(parent,value,size,position,color,18,alignment)
+        label.ZIndex = 33
+        return label
+    end
+
+    local timerBox = frame(card,u(0,186,0,48),u(0,12,0,19))
+    local timer = text(timerBox,"AFK 00:00:00",u(1,0,1,0),u(0,0,0,0),tx,Enum.TextXAlignment.Center)
+    timer.TextSize = 14
+    local avatar = ui("ImageLabel",{
+        Size=u(0,50,0,50), Position=u(0.5,-25,0,10), BackgroundColor3=cd,
+        Image=av.Image, ZIndex=33,
+    },card,25,1)
+    ui("Frame",{Size=u(0,9,0,9),Position=u(1,-9,1,-9),BackgroundColor3=green,BorderSizePixel=0,ZIndex=34},avatar,5)
+    local name = text(card,plr.DisplayName,u(0,118,0,16),u(0.5,-59,0,60),tx,Enum.TextXAlignment.Center)
+    name.TextTruncate = Enum.TextTruncate.AtEnd
+
+    local balanceBox = frame(card,u(0,186,0,48),u(1,-198,0,19))
+    text(balanceBox,"Текущий баланс",u(1,0,0,18),u(0,0,0,5),sb,Enum.TextXAlignment.Center)
+    local balance = text(balanceBox,"—",u(1,0,0,20),u(0,0,0,22),green,Enum.TextXAlignment.Center)
+    balance.TextSize = 14
+
+    local function section(title,x,firstCaption,secondCaption,lastCaption)
+        local column = frame(card,u(0,244,0,211),u(0,x,0,82))
+        local heading = text(column,title,u(1,-20,0,21),u(0,10,0,6),ac)
+        heading.TextSize = 14
+        local function metric(parent,caption,y,initial,color)
+            local captionLabel = text(parent,caption,u(0.46,-7,0,19),u(0,8,0,y),sb)
+            captionLabel.TextTruncate = Enum.TextTruncate.AtEnd
+            local value = text(parent,initial,u(0.55,-8,0,19),u(0.45,0,0,y),color or tx,Enum.TextXAlignment.Right)
+            value.TextTruncate = Enum.TextTruncate.AtEnd
+            return value
+        end
+        local first = metric(column,firstCaption,32,"—")
+        local second = metric(column,secondCaption,51,"—",green)
+        local counts = {}
+        for index,rarity in ipairs(rars) do
+            local row = frame(column,u(1,-16,0,21),u(0,8,0,72+(index-1)*23),cd,5)
+            ui("Frame",{Size=u(0,3,0,13),Position=u(0,4,0,4),BackgroundColor3=rarity.col,BorderSizePixel=0,ZIndex=33},row,2)
+            counts[rarity.id] = metric(row,rarity.n,1,"—")
+        end
+        local last = metric(frame(column,u(1,-16,0,28),u(0,8,0,175),bg,5),lastCaption,4,"—")
+        return first,second,counts,last
+    end
+
+    local bought,spent,counts,last = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
+    section("Крутки номеров",264,"Прокруты","Улов (все)","Выпавший")
+    local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
+    closeAfk.ZIndex = 33
+
+    local function readBalance()
+        local leaderstats = plr:FindFirstChild("leaderstats")
+        for _,key in ipairs({"Money","Cash","Balance","RUB","Баланс","Деньги","₽"}) do
+            local value = plr:GetAttribute(key)
+            if type(value) == "number" then return value end
+            local stat = leaderstats and leaderstats:FindFirstChild(key)
+            if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue")) then return stat.Value end
+        end
+    end
+
+    local startedAt, previousOpt, previousOrder
+    local function refreshAfk()
+        local elapsed = math.floor(os.clock()-startedAt)
+        timer.Text = string.format("AFK %02d:%02d:%02d",math.floor(elapsed/3600),math.floor(elapsed/60)%60,elapsed%60)
+        local money = readBalance()
+        balance.Text = money and fmtNum(money).." ₽" or "—"
+        bought.Text = tostring(afkPurchases.count)
+        spent.Text = fmtNum(afkPurchases.spent).." ₽"
+        for id,label in pairs(counts) do label.Text = "×"..(afkPurchases.byRarity[id] or 0) end
+        last.Text = afkPurchases.last
+    end
+
+    exitAfkMode = function()
+        if not overlay.Visible then return false end
+        overlay.Visible = false
+        g.DisplayOrder = previousOrder
+        applyCustomOpt(previousOpt)
+        tog(true)
+        return true
+    end
+    closeAfk.Activated:Connect(exitAfkMode)
+    openAfk.Activated:Connect(function()
+        previousOpt,previousOrder = appliedOpt,g.DisplayOrder
+        startedAt = os.clock()
+        tipBox.Visible = false
+        m.Visible,oB.Visible = false,false
+        g.DisplayOrder = 10000
+        overlay.Visible = true
+        fitCard()
+        refreshAfk()
+        applyCustomOpt({
+            shadows=true, materials=true, textures=true, particles=true,
+            cleanup=optCfg.cleanup, no3d=true, hideui=true, fps=optCfg.fps,
+        })
+    end)
+    task.spawn(function()
+        while g.Parent do
+            if overlay.Visible then refreshAfk() end
+            task.wait(1)
+        end
+    end)
+end
 
 do
     local resizeInput, resizeStart, resizeAxis, startScale
@@ -488,9 +646,7 @@ cB.MouseButton1Click:Connect(function() dlg.Visible=true end)
 nB.MouseButton1Click:Connect(function() dlg.Visible=false end)
 yB.MouseButton1Click:Connect(function()
     run,trRun,takeRun,stRun=false,false,false,false
-    if optConn then optConn:Disconnect() end
-    for gui,st in pairs(origGuis) do if gui and gui.Parent then gui.Enabled=st end end
-    pcall(function() RS:Set3dRenderingEnabled(true) end)
+    if appliedOpt then applyCustomOpt(nil) end
     g:Destroy()
 end)
 bindB.MouseButton1Click:Connect(function() waitingBind=true bindB.Text="Нажми клавишу..." end)
@@ -499,7 +655,11 @@ plr.Idled:Connect(function() if afkOn and g.Parent then pcall(function() VU:Capt
 U.InputBegan:Connect(function(i,gp)
     if not g.Parent then return end
     if waitingBind and i.UserInputType==Enum.UserInputType.Keyboard then waitingBind=false menuKey=i.KeyCode bindB.Text=i.KeyCode.Name return end
-    if not gp and i.KeyCode==menuKey then dlg.Visible=false tog() end
+    if not gp and i.KeyCode==menuKey then
+        if exitAfkMode() then return end
+        dlg.Visible=false
+        tog()
+    end
 end)
 local function formatBoxPost(item)
     local sender=tostring(item.fromName or item.senderName or item.from or "Игрок")
@@ -735,7 +895,18 @@ local function hold(lot,maxP,lim,session)
         local ok,res=pcall(function() return MB:InvokeServer(lot.id,act) end)
         if session~=sniperSession then return true end
         if ok and type(res)=="table" then
-            if res.ok then okC=okC+1 bl[lot.id]=true st.Text="Куплен ["..tostring(lot.rarity).."]: "..tostring(lot.text).." ("..act.." ₽)\nУспешных: "..okC if lim>0 and okC>=lim then stop("Готово.") end return true end
+            if res.ok then
+                local rarity = tostring(lot.rarity)
+                afkPurchases.count += 1
+                afkPurchases.spent += act
+                afkPurchases.byRarity[rarity] = (afkPurchases.byRarity[rarity] or 0) + 1
+                afkPurchases.last = tostring(lot.text).." ("..fmtNum(act).." ₽)"
+                okC=okC+1
+                bl[lot.id]=true
+                st.Text="Куплен ["..rarity.."]: "..tostring(lot.text).." ("..act.." ₽)\nУспешных: "..okC
+                if lim>0 and okC>=lim then stop("Готово.") end
+                return true
+            end
             local err=tostring(res.err or "ожидание") local le=err:lower()
             if le:find("изменилась") then
                 if fixed then bl[lot.id]=true return false end
