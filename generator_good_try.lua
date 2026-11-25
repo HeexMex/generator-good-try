@@ -1,13 +1,33 @@
 local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("ReplicatedStorage"),game:GetService("CoreGui"),game:GetService("Players"),game:GetService("VirtualUser"),game:GetService("Lighting"),game:GetService("RunService")
 local plr=P.LocalPlayer
 local Http=game:GetService("HttpService")
-local configPath="GGT/config_"..tostring(plr.UserId)..".json"
+local accountPrefix="GGT/config_"..tostring(plr.UserId)
+local activeConfig="default"
+local markerPath=accountPrefix.."_active.txt"
+local function validConfigName(name)
+    return type(name)=="string" and #name>0 and #name<=32 and name:match("^[%w_-]+$")~=nil
+end
+if type(readfile)=="function" then
+    local ok,name=pcall(readfile,markerPath)
+    if ok and validConfigName(name) then activeConfig=name end
+end
+local function configFile(name)
+    if name=="default" then return accountPrefix..".json" end
+    return accountPrefix.."_profile_"..name..".json"
+end
+local configPath=configFile(activeConfig)
 local function readConfig()
     if type(readfile)~="function" then return end
     local ok,loaded=pcall(function() return Http:JSONDecode(readfile(configPath)) end)
     if ok and type(loaded)=="table" and loaded.version==1 then return loaded end
 end
-local savedConfig=readConfig() or {}
+local loadedConfig=readConfig()
+local savedConfig=loadedConfig or {}
+local configReadable=true
+if not loadedConfig and type(isfile)=="function" then
+    local ok,exists=pcall(isfile,configPath)
+    if not ok or exists then configReadable=false end
+end
 local function configNumber(value,default,minimum,maximum)
     if type(value)~="number" or value~=value then return default end
     return math.clamp(value,minimum,maximum)
@@ -67,14 +87,15 @@ local p4=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTrans
 local p5=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local p6=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local p7=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false,ClipsDescendants=true},m)
-local pgs,tbs={p1,p4,p6,p5,p7},{}
+local p9=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
+local pgs,tbs={p1,p4,p6,p5,p7,p9},{}
 local function showPage(index)
     for i,tab in ipairs(tbs) do
         pgs[i].Visible = i==index
         tab.BackgroundColor3 = i==index and ac or cd
     end
 end
-for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","Настройки"}) do
+for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","Настройки","Предметы"}) do
     local tb=bt(sdF,nm,u(1,-12,0,28),u(0,6,0,8+(i-1)*34),i==1 and ac or cd,7)
     tbs[i]=tb
     tb.Activated:Connect(function() showPage(i) end)
@@ -182,59 +203,121 @@ do
             toggle.BackgroundColor3 = filter.enabled and ac or bg
         end)
     end
+    local balanceBox
     refreshTraderFilters=function()
         for index,filter in ipairs(filters) do
             filter.enabled=type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false
             filter.toggle.Text=filter.enabled and "ON" or "OFF"
             filter.toggle.BackgroundColor3=filter.enabled and ac or bg
         end
+        if balanceBox then balanceBox.Text=tostring(configNumber(savedConfig.traderReserve,0,0,1e15)) end
     end
-    local hint = lb(trCard,"Открой окно торговца, чтобы проверить товары.",u(1,-24,0,30),u(0,12,0,117),sb,17)
-    hint.TextWrapped = true
-
-    local function readAssortment()
-        local pg = plr:FindFirstChild("PlayerGui")
-        local plates = pg and pg:FindFirstChild("PlatesUI")
-        local panel = plates and plates:FindFirstChild("TraderPanel")
-        if not panel or not panel.Visible then return end
-
-        local matches = {}
-        for _,label in ipairs(panel:GetDescendants()) do
-            if not label:IsA("TextLabel") or not label.Visible then continue end
-            local parent = label.Parent
-            while parent ~= panel and (not parent:IsA("GuiObject") or parent.Visible) do
-                parent = parent.Parent
-            end
-            if parent ~= panel then continue end
-            local name = normalizeItemName(label.Text)
-            for index,filter in ipairs(filters) do
-                if not filter.enabled or not filter.matches(name) then continue end
-                for _,child in ipairs(label.Parent:GetChildren()) do
-                    if child:IsA("TextButton") and child.Visible and child.Text:find("₽",1,true) then
-                        matches[index] = child.Text:gsub("<[^>]*>","")
-                        break
+    balanceBox=bx(p4,tostring(configNumber(savedConfig.traderReserve,0,0,1e15)),u(0.48,0,0,27),u(0,0,1,-75))
+    local balanceLabel=lb(p4,"Остаток ₽:",u(0.48,0,0,27),u(0.52,0,1,-75),sb,17)
+    local action=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,36),u(0,0,1,-40),ac,8)
+    local hint = lb(trCard,"Проверка торговца через сервер.",u(1,-24,0,30),u(0,12,0,117),sb,17)
+    hint.TextWrapped=true
+    local running=false
+    local session=0
+    local seenVisit=nil
+    local handled={}
+    local remaining=nil
+    local function matchesId(filterIndex,id)
+        if type(id)~="string" then return false end
+        if filterIndex==1 then return id=="roll_1000000" end
+        return id=="elixir_5" or id:match("^potion_%a+_5$")~=nil
+    end
+    local function invoke(remote,...)
+        local args=table.pack(...)
+        return pcall(function() return remote:InvokeServer(table.unpack(args,1,args.n)) end)
+    end
+    action.Activated:Connect(function()
+        running=not running
+        session=session+1
+        local current=session
+        action.Text=running and "АВТО-ТОРГАШ: ВКЛ" or "АВТО-ТОРГАШ: ВЫКЛ"
+        action.BackgroundColor3=running and danger or ac
+        if not running then hint.Text="Авто-торгаш остановлен." return end
+        task.spawn(function()
+            while running and session==current and g.Parent do
+                local trader=Rem:FindFirstChild("Trader")
+                local stateRemote=Rem:FindFirstChild("GetState")
+                local waitTime=2
+                if not trader or not stateRemote then
+                    hint.Text="Нет Trader или GetState."
+                    waitTime=10
+                else
+                    local ok,response=invoke(trader,"get")
+                    if not running or session~=current then return end
+                    if ok and type(response)=="table" and type(response.data)=="table" and type(response.data.goods)=="table" then
+                        local data=response.data
+                        if data.n~=nil and data.n~=seenVisit then seenVisit=data.n handled={} remaining=nil end
+                        if data.n==nil then
+                            hint.Text="Нет ID визита торгаша; покупка остановлена."
+                        else
+                            for i,filter in ipairs(filters) do
+                                local found=false
+                                for _,good in ipairs(data.goods) do
+                                    if type(good)=="table" and matchesId(i,good.id) and not good.bought then
+                                        found=true filter.status.Text=tostring(good.price or 0).." ₽" break
+                                    end
+                                end
+                                if not found then filter.status.Text="Нет" end
+                            end
+                            hint.Text="Получен ассортимент торгаша."
+                            for index,good in ipairs(data.goods) do
+                                if not running or session~=current then break end
+                                local selected=false
+                                for i,filter in ipairs(filters) do
+                                    if type(good)=="table" and filter.enabled and matchesId(i,good.id) then selected=true break end
+                                end
+                                if selected and not good.bought and not handled[index] then
+                                    local price=tonumber(good.price)
+                                    local reserve=parseM(balanceBox.Text)
+                                    if not price or price<0 then
+                                        hint.Text="Неизвестная цена; покупка пропущена."
+                                        handled[index]=true
+                                    else
+                                        local stateOk,state=invoke(stateRemote)
+                                        if not running or session~=current then return end
+                                        local money=stateOk and type(state)=="table" and tonumber(state.money)
+                                        if money and remaining then money=math.min(money,remaining) end
+                                        if not money then
+                                            hint.Text="Не удалось проверить баланс."
+                                            waitTime=10
+                                            break
+                                        elseif money-price<reserve then
+                                            hint.Text="Остаток ниже лимита; ожидаю."
+                                            waitTime=10
+                                            break
+                                        else
+                                            handled[index]=true
+                                            local buyOk,result=invoke(trader,"buy",index)
+                                            if not running or session~=current then return end
+                                            if buyOk and type(result)=="table" and result.ok then
+                                                remaining=money-price
+                                                hint.Text="Куплено: "..tostring(good.id)
+                                            else
+                                                hint.Text="Покупка не подтверждена: "..tostring(type(result)=="table" and (result.why or result.err) or "ошибка")
+                                            end
+                                            task.wait(0.25)
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        seenVisit=nil handled={} remaining=nil
+                        hint.Text="Торгаш недоступен; ожидаю."
+                        waitTime=5
                     end
                 end
+                task.wait(waitTime)
             end
-        end
-        return matches
-    end
-
-    task.spawn(function()
-        while g.Parent do
-            if m.Visible and p4.Visible then
-                local matches = readAssortment()
-                hint.Text = matches and "Цены из открытого ассортимента торговца."
-                    or "Открой окно торговца, чтобы проверить товары."
-                for index,filter in ipairs(filters) do
-                    local found = matches and matches[index]
-                    filter.status.Text = filter.enabled and matches and (found or "Нет") or "—"
-                    filter.status.TextColor3 = found and c(74,222,128) or sb
-                end
-            end
-            task.wait(0.35)
-        end
+        end)
     end)
+    balanceBox.FocusLost:Connect(function() savedConfig.traderReserve=parseM(balanceBox.Text) balanceBox.Text=tostring(savedConfig.traderReserve) end)
+    g.Destroying:Connect(function() running=false session=session+1 end)
 end
 
 local idBox,sumBox,pickB,mSt,mLogScroll
@@ -1565,6 +1648,79 @@ g.Destroying:Connect(function()
     hotkey:Disconnect()
 end)
 
+-- The counter is server-owned; a batch may cross a threshold between updates.
+local itemRule={}
+do
+    lb(p9,"ID предметов через запятую:",u(1,-8,0,20),u(0,4,0,2),sb,17)
+    itemRule.items=bx(p9,"",u(1,-8,0,28),u(0,4,0,24))
+    itemRule.items.PlaceholderText="potion_luck_1, potion_speed_1"
+    lb(p9,"Один раз при числе круток:",u(1,-8,0,20),u(0,4,0,57),sb,17)
+    itemRule.threshold=bx(p9,"100",u(1,-8,0,28),u(0,4,0,79))
+    local info=lb(p9,"Выбери предметы и включи правило.",u(1,-8,0,60),u(0,4,0,112),sb,17)
+    info.TextWrapped=true
+    local button=bt(p9,"ПРАВИЛО: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
+    local armed=false
+    local lastCount=nil
+    local ids={}
+    local target=nil
+    local generation=0
+    local observedCount=nil
+    local observedVersion=0
+    local function reset()
+        armed=false button.Text="ПРАВИЛО: ВЫКЛ" button.BackgroundColor3=ac
+    end
+    itemRule.stop=function() generation=generation+1 reset() end
+    local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
+        if type(state)~="table" or type(state.rollCount)~="number" then return end
+        local count=state.rollCount
+        observedCount=count observedVersion=observedVersion+1
+        if not armed then return end
+        if lastCount and lastCount<target and count>=target then
+            reset()
+            local selected=ids
+            task.spawn(function()
+                local inventory=Rem:FindFirstChild("Inventory")
+                if not inventory then info.Text="Ошибка: Inventory не найден." return end
+                local successes=0
+                for _,id in ipairs(selected) do
+                    if not g.Parent then return end
+                    local ok,result=pcall(function() return inventory:InvokeServer("use",id) end)
+                    if ok and type(result)=="number" and result>0 then successes=successes+1 end
+                end
+                info.Text="Порог достигнут: "..count..". Использовано "..successes.." из "..#selected.."."
+            end)
+        end
+        lastCount=count
+    end)
+    g.Destroying:Connect(function() connection:Disconnect() end)
+    button.MouseButton1Click:Connect(function()
+        generation=generation+1
+        local current=generation
+        if armed then reset() info.Text="Правило остановлено." return end
+        local n=tonumber(itemRule.threshold.Text)
+        local selected={}
+        local seen={}
+        for raw in itemRule.items.Text:gmatch("[^,]+") do
+            local id=raw:match("^%s*(.-)%s*$")
+            if id~="" and id:match("^[%w_]+$") and not seen[id] then table.insert(selected,id) seen[id]=true end
+        end
+        if not n or n<1 or n%1~=0 or #selected==0 then info.Text="Укажи целое число и ID предметов." return end
+        info.Text="Получаю счётчик круток..."
+        local remote=Rem:FindFirstChild("GetState")
+        if not remote then info.Text="Ошибка: GetState не найден." return end
+        local beforeRequest=observedVersion
+        local ok,state=pcall(function() return remote:InvokeServer() end)
+        if current~=generation or not g.Parent then return end
+        if not ok or type(state)~="table" or type(state.rollCount)~="number" then info.Text="Не удалось получить счётчик." return end
+        if observedVersion~=beforeRequest and observedCount then state.rollCount=observedCount end
+        if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." return end
+        ids,target,lastCount=selected,n,state.rollCount
+        armed=true button.Text="ПРАВИЛО: ВКЛ" button.BackgroundColor3=c(200,55,65)
+        info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount..". Срабатывание после обновления счётчика."
+    end)
+end
+
+
 do
     local width=configNumber(savedConfig.width,435,435,1600)
     local height=configNumber(savedConfig.height,320,320,1000)
@@ -1572,6 +1728,10 @@ do
     m.Position=u(0.5,-math.floor(width/2),0.3,0)
 
     local function applyTabFields(config)
+        itemRule.stop()
+        itemRule.items.Text=type(config.itemIds)=="string" and config.itemIds or ""
+        itemRule.threshold.Text=type(config.itemThreshold)=="string" and config.itemThreshold or "100"
+        if type(config.afkOn)=="boolean" then afkOn=config.afkOn afkB.Text=afkOn and "ON" or "OFF" afkB.BackgroundColor3=afkOn and ac or bg end
         local market=type(config.market)=="table" and config.market or {}
         lBox.Text=tostring(math.floor(configNumber(market.limit,0,0,1e9)))
         dBox.Text=tostring(configNumber(market.delay,1.5,1.4,3600))
@@ -1604,6 +1764,7 @@ do
 
     applyTabFields(savedConfig)
 
+    local lastSavedData=nil
     saveConfig=function(recipientOnly)
         if type(writefile)~="function" then return false end
         local entry=recipientOnly and readConfig()
@@ -1619,6 +1780,9 @@ do
                 stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
                 optimization=table.clone(optCfg),
                 traderFilters={true,true},
+                traderReserve=configNumber(savedConfig.traderReserve,0,0,1e15),
+                itemIds=itemRule.items.Text, itemThreshold=itemRule.threshold.Text,
+                afkOn=afkOn,
                 mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
                 stallLevels=table.clone(stallLevels),
                 market={
@@ -1634,7 +1798,12 @@ do
             end
         end
         if type(makefolder)=="function" then pcall(makefolder,"GGT") end
-        return pcall(function() writefile(configPath,Http:JSONEncode(entry)) end)
+        local ok,encoded=pcall(function() return Http:JSONEncode(entry) end)
+        if not ok then return false end
+        if encoded==lastSavedData then return true end
+        local saved=pcall(function() writefile(configPath,encoded) end)
+        if saved then lastSavedData=encoded end
+        return saved
     end
 
     local configOverlay=ui("Frame",{
@@ -1643,10 +1812,10 @@ do
     },m,10)
     hideSettingsActionsBehind(configOverlay)
     local card=ui("Frame",{
-        Size=u(0.8,0,0,163),Position=u(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),
+        Size=u(0.8,0,0,240),Position=u(0.5,0,0.5,0),AnchorPoint=Vector2.new(0.5,0.5),
         BackgroundColor3=sd,ZIndex=21,
     },configOverlay,10,1)
-    Instance.new("UISizeConstraint",card).MaxSize=Vector2.new(360,163)
+    Instance.new("UISizeConstraint",card).MaxSize=Vector2.new(360,240)
     local heading=lb(card,"Конфиги",u(1,-66,0,27),u(0,14,0,9),tx,18)
     heading.TextSize,heading.ZIndex=15,22
     local close=bt(card,"×",u(0,32,0,28),u(1,-42,0,9),cd,6,1)
@@ -1655,22 +1824,29 @@ do
     close.ZIndex,save.ZIndex,apply.ZIndex=22,22,22
     local status=lb(card,"",u(1,-24,0,42),u(0,12,0,106),sb,17)
     status.TextWrapped,status.ZIndex=true,22
+    local nameBox=bx(card,"",u(0.62,-16,0,28),u(0,12,0,152))
+    nameBox.PlaceholderText="Имя нового конфига"
+    local createProfile=bt(card,"Создать",u(0.38,-8,0,28),u(0.62,4,0,152),ac,6)
+    local nextProfile=bt(card,"Выбрать конфиг",u(1,-24,0,28),u(0,12,0,187),cd,6,1)
+    nameBox.ZIndex,createProfile.ZIndex,nextProfile.ZIndex=22,22,22
 
     configB.Activated:Connect(function()
-        status.Text=readConfig() and "Сохранённый конфиг найден." or "Для этого аккаунта пока нет сохранённого конфига."
+        status.Text="Активный: "..activeConfig.." · автосохранение"
         configOverlay.Visible=true
     end)
     close.Activated:Connect(function() configOverlay.Visible=false end)
     save.Activated:Connect(function()
+        if not configReadable then status.Text="Конфиг повреждён или недоступен; запись отключена." return end
         status.Text=saveConfig() and "Текущие настройки сохранены." or "Не удалось записать файл конфига."
     end)
-    apply.Activated:Connect(function()
+    local function applyCurrent()
         local config=readConfig()
         if not config then
             status.Text="Не удалось прочитать сохранённый конфиг."
-            return
+            return false
         end
         savedConfig=config
+        configReadable=true
         setTheme(config.modern==true)
         m.Size=u(0,configNumber(config.width,435,435,1600),0,configNumber(config.height,320,320,1000))
         menuKey,waitingBind=configMenuKey(config.menuKey),false
@@ -1688,6 +1864,59 @@ do
         fpsBox.Text=tostring(optCfg.fps)
         applyCustomOpt(table.clone(optCfg))
         status.Text="Конфиг загружен и применён."
+        return true
+    end
+    apply.Activated:Connect(applyCurrent)
+    local function profiles()
+        local result={"default"}
+        if type(listfiles)~="function" then return result end
+        local ok,files=pcall(listfiles,"GGT")
+        if not ok then return result end
+        local prefix="config_"..tostring(plr.UserId).."_profile_"
+        for _,file in ipairs(files) do
+            local basename=file:gsub("\\","/"):match("([^/]+)$")
+            if basename and basename:sub(1,#prefix)==prefix and basename:sub(-5)==".json" then
+                local name=basename:sub(#prefix+1,-6)
+                if validConfigName(name) and name~="default" then table.insert(result,name) end
+            end
+        end
+        table.sort(result)
+        return result
+    end
+    local function rememberActive()
+        if type(writefile)=="function" then pcall(writefile,markerPath,activeConfig) end
+    end
+    createProfile.Activated:Connect(function()
+        local name=nameBox.Text
+        if not validConfigName(name) or name=="default" then status.Text="Имя: латинские буквы, цифры, - или _." return end
+        if type(isfile)~="function" or type(writefile)~="function" then status.Text="Executor не поддерживает файлы." return end
+        local newPath=configFile(name)
+        local ok,exists=pcall(isfile,newPath)
+        if not ok or exists then status.Text="Конфиг уже существует или недоступен." return end
+        if not configReadable or not saveConfig() then status.Text="Текущий конфиг недоступен для сохранения." return end
+        local oldName,oldPath=activeConfig,configPath
+        activeConfig,configPath,lastSavedData=name,newPath,nil
+        if not saveConfig() then activeConfig,configPath,lastSavedData=oldName,oldPath,nil status.Text="Ошибка создания конфига." return end
+        rememberActive()
+        status.Text="Активный: "..name.." · автосохранение"
+    end)
+    nextProfile.Activated:Connect(function()
+        local names=profiles()
+        if #names<2 then status.Text="Нет других конфигов." return end
+        local index=table.find(names,activeConfig) or 0
+        local name=names[index%#names+1]
+        if not configReadable or not saveConfig() then status.Text="Текущий конфиг недоступен для сохранения." return end
+        local oldName,oldPath=activeConfig,configPath
+        activeConfig,configPath,lastSavedData=name,configFile(name),nil
+        if not applyCurrent() then activeConfig,configPath,lastSavedData=oldName,oldPath,nil return end
+        rememberActive()
+        status.Text="Активный: "..name.." · автосохранение"
+    end)
+    task.spawn(function()
+        while g.Parent do
+            task.wait(3)
+            if g.Parent and configReadable and type(writefile)=="function" then saveConfig() end
+        end
     end)
 
     local function showTraderOnArrival(npc)
