@@ -1722,6 +1722,7 @@ end
 
 
 do
+    (function()
     local width=configNumber(savedConfig.width,435,435,1600)
     local height=configNumber(savedConfig.height,320,320,1000)
     m.Size=u(0,width,0,height)
@@ -1931,6 +1932,7 @@ do
     local traderArrival=workspace.DescendantAdded:Connect(showTraderOnArrival)
     showTraderOnArrival(workspace:FindFirstChild("TraderWalker",true))
     g.Destroying:Connect(function() traderArrival:Disconnect() end)
+    end)()
 end
 
 local function formatBoxPost(item)
