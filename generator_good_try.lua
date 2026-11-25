@@ -1593,6 +1593,7 @@ end)()
 -- Telegram credentials remain in the executor's local workspace, never in shared configs.
 do
     local endpointFile="GGT/stats_"..tostring(plr.UserId)..".json"
+    local sharedFile="GGT/stats_link.json"
     local requestFn=type(request)=="function" and request or type(http_request)=="function" and http_request or (type(syn)=="table" and syn.request)
     local cfg={url="https://hub-popcontrol.ru",token="",enabled=false}
     if type(readfile)=="function" then
@@ -1605,10 +1606,21 @@ do
         return type(url)=="string" and #url<=200 and url:match("^https://[%w%.%-]+:?%d*$")~=nil
     end
     if not validUrl(cfg.url) then cfg.enabled=false cfg.token="" cfg.url="https://hub-popcontrol.ru" end
-    local function saveSettings()
-        if type(writefile)~="function" then return false end
+    local shared=nil
+    if type(readfile)=="function" then
+        local ok,data=pcall(function() return Http:JSONDecode(readfile(sharedFile)) end)
+        if ok and type(data)=="table" and validUrl(data.url) and type(data.code)=="string" and #data.code>=20 and #data.code<=100 then shared=data end
+    end
+    local function writeVerified(path,data)
+        if type(writefile)~="function" or type(readfile)~="function" then return false end
         if type(makefolder)=="function" then pcall(makefolder,"GGT") end
-        return pcall(function() writefile(endpointFile,Http:JSONEncode(cfg)) end)
+        local encoded=Http:JSONEncode(data)
+        local ok=pcall(function() writefile(path,encoded) end)
+        local readOk,stored=pcall(readfile,path)
+        return ok and readOk and stored==encoded
+    end
+    local function saveSettings()
+        return writeVerified(endpointFile,cfg)
     end
     local panel=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,Active=true,ZIndex=40},m,10,1)
     hideSettingsActionsBehind(panel)
@@ -1616,7 +1628,7 @@ do
     title.ZIndex=41
     local close=bt(panel,"×",u(0,32,0,26),u(1,-40,0,8),cd,6,1) close.ZIndex=41
     local url=bx(panel,cfg.url,u(1,-24,0,28),u(0,12,0,43)) url.ZIndex=41 url.PlaceholderText="https://адрес-сервера"
-    local code=bx(panel,"",u(1,-24,0,28),u(0,12,0,77)) code.ZIndex=41 code.PlaceholderText="Одноразовый код из /link"
+    local code=bx(panel,"",u(1,-24,0,28),u(0,12,0,77)) code.ZIndex=41 code.PlaceholderText="Общий код из /link"
     local link=bt(panel,"ПРИВЯЗАТЬ",u(0.48,-12,0,32),u(0,12,0,112),ac,6) link.ZIndex=41
     local toggle=bt(panel,"",u(0.52,-12,0,32),u(0.48,0,0,112),cd,6,1) toggle.ZIndex=41
     local status=lb(panel,"",u(1,-24,0,68),u(0,12,0,151),sb,17) status.TextWrapped=true status.ZIndex=41
@@ -1625,16 +1637,12 @@ do
         toggle.BackgroundColor3=cfg.enabled and ac or cd
     end
     updateToggle()
+    status.Text=cfg.token~="" and (cfg.enabled and "Аккаунт привязан. Отправка включена." or "Аккаунт привязан. Отправка выключена.") or (shared and "Общий код найден; подключаю аккаунт." or "Вставь общий код из /link.")
     close.Activated:Connect(function() panel.Visible=false end)
     statsOpenB.Activated:Connect(function() panel.Visible=true end)
     local busy=false
-    link.Activated:Connect(function()
-        if busy then return end
-        if type(requestFn)~="function" then status.Text="Executor не поддерживает HTTP-запросы." return end
-        if type(writefile)~="function" then status.Text="Executor не поддерживает сохранение файла." return end
-        local target=url.Text:gsub("%s+",""):gsub("/+$","")
-        local pairing=code.Text:gsub("%s+","")
-        if not validUrl(target) or #pairing<20 or #pairing>100 then status.Text="Укажи HTTPS-адрес и одноразовый код." return end
+    local function pairAccount(target,pairing)
+        if busy or type(requestFn)~="function" then return end
         busy=true status.Text="Привязываю..."
         task.spawn(function()
             local ok,response=pcall(function() return requestFn({Url=target.."/api/pair",Method="POST",Headers={["Content-Type"]="application/json"},Body=Http:JSONEncode({code=pairing,roblox_user_id=plr.UserId,username=plr.Name})}) end)
@@ -1643,12 +1651,22 @@ do
             local statusCode=ok and type(response)=="table" and (response.StatusCode or response.Status)
             local parsed,data=pcall(function() return Http:JSONDecode(response.Body) end)
             if statusCode==200 and parsed and type(data)=="table" and type(data.client_token)=="string" and #data.client_token>=32 then
-                local previous=cfg
                 cfg={url=target,token=data.client_token,enabled=true}
                 if saveSettings() then updateToggle() status.Text="Аккаунт привязан. Отправка статистики включена."
-                else cfg=previous updateToggle() status.Text="Не удалось сохранить ключ. Выполни привязку заново." end
+                else updateToggle() status.Text="Ключ не сохранён executor; общий код поможет восстановить привязку." end
             else status.Text="Не удалось привязать аккаунт: проверь адрес и код." end
         end)
+    end
+    link.Activated:Connect(function()
+        if busy then return end
+        if type(requestFn)~="function" then status.Text="Executor не поддерживает HTTP-запросы." return end
+        local target=url.Text:gsub("%s+",""):gsub("/+$","")
+        local pairing=code.Text:gsub("%s+","")
+        if not validUrl(target) or #pairing<20 or #pairing>100 then status.Text="Укажи HTTPS-адрес и код из /link." return end
+        local candidate={url=target,code=pairing}
+        if not writeVerified(sharedFile,candidate) then status.Text="Executor не сохранил код. Проверь доступ к файлам." return end
+        shared=candidate
+        pairAccount(target,pairing)
     end)
     toggle.Activated:Connect(function()
         if cfg.token=="" then status.Text="Сначала привяжи аккаунт." return end
@@ -1664,6 +1682,7 @@ do
     g.Destroying:Connect(function() if stateConnection then stateConnection:Disconnect() end end)
     local session=Http:GenerateGUID(false)
     local seq=0
+    if cfg.token=="" and shared then pairAccount(shared.url,shared.code) end
     task.spawn(function()
         local getState=Rem:FindFirstChild("GetState")
         if getState then
@@ -1677,6 +1696,7 @@ do
                 seq=seq+1
                 local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
                 local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
+                if ok and type(response)=="table" and (response.StatusCode or response.Status)==401 and shared and shared.url==cfg.url then pairAccount(shared.url,shared.code) end
                 if panel.Visible then status.Text=ok and type(response)=="table" and (response.StatusCode or response.Status)==200 and "Статистика отправлена." or "Не удалось отправить статистику." end
             end
             task.wait(60)
@@ -2073,18 +2093,6 @@ do
         end
     end)
 
-    local function showTraderOnArrival(npc)
-        if not npc or npc.Name~="TraderWalker" then return end
-        task.defer(function()
-            if not g.Parent or not npc:IsDescendantOf(workspace) then return end
-            if not m.Visible and not oB.Visible and not menuAnimating then return end
-            showPage(2)
-            tog(true)
-        end)
-    end
-    local traderArrival=workspace.DescendantAdded:Connect(showTraderOnArrival)
-    showTraderOnArrival(workspace:FindFirstChild("TraderWalker",true))
-    g.Destroying:Connect(function() traderArrival:Disconnect() end)
     end)()
 end
 
