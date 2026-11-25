@@ -509,7 +509,8 @@ local settingsActions=ui("Frame",{
 },p7)
 local optOpenB=bt(settingsActions,"ОПТИМИЗАЦИЯ",u(0.58,-4,0,38),u(0,0,1,-38),ac,8)
 local customB=bt(settingsActions,"КАСТОМ",u(0.42,-4,0,38),u(0.58,4,1,-38),cd,8,1)
-local openAfk=bt(settingsActions,"AFK-РЕЖИМ",u(1,0,0,32),u(0,0,0,0),cd,8,1)
+local openAfk=bt(settingsActions,"AFK-РЕЖИМ",u(0.58,-4,0,32),u(0,0,0,0),cd,8,1)
+local statsOpenB=bt(settingsActions,"TELEGRAM",u(0.42,-4,0,32),u(0.58,4,0,0),cd,8,1)
 
 local settingsOverlays={}
 local function hideSettingsActionsBehind(overlay)
@@ -1530,6 +1531,100 @@ local exitAfkMode = (function()
     end)
     return exitAfkMode
 end)()
+
+-- Telegram credentials remain in the executor's local workspace, never in shared configs.
+do
+    local endpointFile="GGT/stats_"..tostring(plr.UserId)..".json"
+    local requestFn=type(request)=="function" and request or type(http_request)=="function" and http_request or (type(syn)=="table" and syn.request)
+    local cfg={url="https://hub-popcontrol.ru",token="",enabled=false}
+    if type(readfile)=="function" then
+        local ok,data=pcall(function() return Http:JSONDecode(readfile(endpointFile)) end)
+        if ok and type(data)=="table" and type(data.url)=="string" and type(data.token)=="string" then
+            cfg.url=data.url cfg.token=data.token cfg.enabled=data.enabled==true
+        end
+    end
+    local function validUrl(url)
+        return type(url)=="string" and #url<=200 and url:match("^https://[%w%.%-]+:?%d*$")~=nil
+    end
+    if not validUrl(cfg.url) then cfg.enabled=false cfg.token="" cfg.url="https://hub-popcontrol.ru" end
+    local function saveSettings()
+        if type(writefile)~="function" then return false end
+        if type(makefolder)=="function" then pcall(makefolder,"GGT") end
+        return pcall(function() writefile(endpointFile,Http:JSONEncode(cfg)) end)
+    end
+    local panel=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,Active=true,ZIndex=40},m,10,1)
+    hideSettingsActionsBehind(panel)
+    local title=lb(panel,"Telegram: привязка аккаунта",u(1,-55,0,26),u(0,12,0,8),tx,18)
+    title.ZIndex=41
+    local close=bt(panel,"×",u(0,32,0,26),u(1,-40,0,8),cd,6,1) close.ZIndex=41
+    local url=bx(panel,cfg.url,u(1,-24,0,28),u(0,12,0,43)) url.ZIndex=41 url.PlaceholderText="https://адрес-сервера"
+    local code=bx(panel,"",u(1,-24,0,28),u(0,12,0,77)) code.ZIndex=41 code.PlaceholderText="Одноразовый код из /link"
+    local link=bt(panel,"ПРИВЯЗАТЬ",u(0.48,-12,0,32),u(0,12,0,112),ac,6) link.ZIndex=41
+    local toggle=bt(panel,"",u(0.52,-12,0,32),u(0.48,0,0,112),cd,6,1) toggle.ZIndex=41
+    local status=lb(panel,"",u(1,-24,0,68),u(0,12,0,151),sb,17) status.TextWrapped=true status.ZIndex=41
+    local function updateToggle()
+        toggle.Text=cfg.enabled and "ОТПРАВКА: ВКЛ" or "ОТПРАВКА: ВЫКЛ"
+        toggle.BackgroundColor3=cfg.enabled and ac or cd
+    end
+    updateToggle()
+    close.Activated:Connect(function() panel.Visible=false end)
+    statsOpenB.Activated:Connect(function() panel.Visible=true end)
+    local busy=false
+    link.Activated:Connect(function()
+        if busy then return end
+        if type(requestFn)~="function" then status.Text="Executor не поддерживает HTTP-запросы." return end
+        if type(writefile)~="function" then status.Text="Executor не поддерживает сохранение файла." return end
+        local target=url.Text:gsub("%s+",""):gsub("/+$","")
+        local pairing=code.Text:gsub("%s+","")
+        if not validUrl(target) or #pairing<20 or #pairing>100 then status.Text="Укажи HTTPS-адрес и одноразовый код." return end
+        busy=true status.Text="Привязываю..."
+        task.spawn(function()
+            local ok,response=pcall(function() return requestFn({Url=target.."/api/pair",Method="POST",Headers={["Content-Type"]="application/json"},Body=Http:JSONEncode({code=pairing,roblox_user_id=plr.UserId,username=plr.Name})}) end)
+            busy=false code.Text=""
+            if not g.Parent then return end
+            local statusCode=ok and type(response)=="table" and (response.StatusCode or response.Status)
+            local parsed,data=pcall(function() return Http:JSONDecode(response.Body) end)
+            if statusCode==200 and parsed and type(data)=="table" and type(data.client_token)=="string" and #data.client_token>=32 then
+                local previous=cfg
+                cfg={url=target,token=data.client_token,enabled=true}
+                if saveSettings() then updateToggle() status.Text="Аккаунт привязан. Отправка статистики включена."
+                else cfg=previous updateToggle() status.Text="Не удалось сохранить ключ. Выполни привязку заново." end
+            else status.Text="Не удалось привязать аккаунт: проверь адрес и код." end
+        end)
+    end)
+    toggle.Activated:Connect(function()
+        if cfg.token=="" then status.Text="Сначала привяжи аккаунт." return end
+        cfg.enabled=not cfg.enabled
+        if not saveSettings() then cfg.enabled=not cfg.enabled status.Text="Не удалось сохранить настройку." else status.Text=cfg.enabled and "Отправка включена." or "Отправка выключена." end
+        updateToggle()
+    end)
+    local latestBalance=nil
+    local stateRemote=Rem:FindFirstChild("StateChanged")
+    local stateConnection=stateRemote and stateRemote.OnClientEvent:Connect(function(state)
+        if type(state)=="table" and type(state.money)=="number" and state.money>=0 then latestBalance=math.floor(state.money) end
+    end)
+    g.Destroying:Connect(function() if stateConnection then stateConnection:Disconnect() end end)
+    local session=Http:GenerateGUID(false)
+    local seq=0
+    task.spawn(function()
+        local getState=Rem:FindFirstChild("GetState")
+        if getState then
+            local ok,state=pcall(function() return getState:InvokeServer() end)
+            if ok and type(state)=="table" and type(state.money)=="number" and state.money>=0 then latestBalance=math.floor(state.money) end
+        end
+    end)
+    task.spawn(function()
+        while g.Parent do
+            if cfg.enabled and type(requestFn)=="function" and validUrl(cfg.url) and cfg.token~="" then
+                seq=seq+1
+                local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last}
+                local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
+                if panel.Visible then status.Text=ok and type(response)=="table" and (response.StatusCode or response.Status)==200 and "Статистика отправлена." or "Не удалось отправить статистику." end
+            end
+            task.wait(60)
+        end
+    end)
+end
 
 do
     local resizeInput,resizeStart,edge,baseSize,basePosition
