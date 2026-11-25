@@ -874,15 +874,17 @@ end)
 do
     local panel=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=11},p5,8,1)
     local heading=lb(panel,"Роллы, эликсиры, зелья V",u(1,-16,0,24),u(0,8,0,4),tx,18) heading.ZIndex=12
-    local list=ui("ScrollingFrame",{Size=u(1,-10,1,-72),Position=u(0,5,0,30),BackgroundTransparency=1,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=12},panel)
-    local status=lb(panel,"",u(1,-106,0,27),u(0,6,1,-33),sb,17) status.ZIndex=12
-    local done=bt(panel,"Готово",u(0,90,0,27),u(1,-96,1,-33),ac,6) done.ZIndex=12
+    local list=ui("ScrollingFrame",{Size=u(1,-10,1,-96),Position=u(0,5,0,30),BackgroundTransparency=1,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=12},panel)
+    local status=lb(panel,"",u(1,-12,0,23),u(0,6,1,-58),sb,17) status.ZIndex=12
+    local selectAll=bt(panel,"Выбрать всё",u(0.5,-9,0,27),u(0,6,1,-33),cd,6,1) selectAll.ZIndex=12
+    local done=bt(panel,"Готово",u(0.5,-9,0,27),u(0.5,3,1,-33),ac,6) done.ZIndex=12
     local function total() local n=0 for _,v in pairs(mailItems) do n+=v end return n end
     local function refreshButton() extra.itemPickB.Text="Предм.: "..total() end
     local function eligible(id)
         return type(id)=="string" and (id:match("^potion_%a+_5$") or id:match("^elixir_%d+$") or id:match("^roll_%d+$"))~=nil
     end
     local refreshId=0
+    local displayed,quantityBoxes={},{}
     local function inventory()
         local stateRemote=Rem:FindFirstChild("GetState")
         if stateRemote then
@@ -921,6 +923,7 @@ do
     end
     extra.itemPickB.Activated:Connect(function()
         refreshId+=1 local current=refreshId
+        displayed,quantityBoxes={},{}
         panel.Visible=true status.Text="Обновляю инвентарь..."
         for _,child in ipairs(list:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
         local slots=inventory()
@@ -930,10 +933,12 @@ do
         for _,slot in ipairs(slots) do
             if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" and slot.n>0 then
                 local id,available=slot.id,math.floor(slot.n)
+                table.insert(displayed,{id=id,available=available})
                 row+=1
                 local frame=ui("Frame",{Size=u(1,-6,0,32),Position=u(0,2,0,(row-1)*35),BackgroundColor3=cd,ZIndex=12},list,6,1)
                 local title=lb(frame,displayName(id).." ("..available..")",u(1,-68,1,0),u(0,6,0,0),tx,17) title.ZIndex=13 title.TextTruncate=Enum.TextTruncate.AtEnd
                 local quantity=bx(frame,tostring(mailItems[id] or 0),u(0,54,0,24),u(1,-60,0,4)) quantity.ZIndex=13
+                quantityBoxes[id]=quantity
                 quantity.FocusLost:Connect(function()
                     local old=mailItems[id] or 0
                     local number=math.floor(tonumber(quantity.Text) or 0)
@@ -945,6 +950,19 @@ do
         end
         list.CanvasSize=u(0,0,0,row*35)
         status.Text=row>0 and ("Всего: "..total().." / 90") or "Доступных предметов нет."
+    end)
+    selectAll.Activated:Connect(function()
+        if #displayed==0 then return end
+        table.clear(mailItems)
+        local remaining,availableTotal=90,0
+        for _,entry in ipairs(displayed) do
+            availableTotal+=entry.available
+            local amount=math.min(entry.available,remaining)
+            if amount>0 then mailItems[entry.id]=amount remaining-=amount end
+            if quantityBoxes[entry.id] then quantityBoxes[entry.id].Text=tostring(amount) end
+        end
+        refreshButton()
+        status.Text=availableTotal>90 and "Выбрано 90: лимит посылки." or ("Выбрано: "..total().." / 90")
     end)
     done.Activated:Connect(function() refreshId+=1 panel.Visible=false refreshButton() end)
 end
@@ -2010,9 +2028,9 @@ g.Destroying:Connect(function()
 end)
 
 -- Выбор тира и запуск по таймеру или один раз по счётчику круток.
-local itemRule={tier=1,mode="timer"}
+local itemRule={tiers={true,false,false},mode="timer"}
 do
-    lb(p9,"Выбери тир зелий (удача, скорость, деньги):",u(1,-8,0,20),u(0,4,0,0),sb,17)
+    lb(p9,"Выбери тиры зелий (удача, скорость, деньги):",u(1,-8,0,20),u(0,4,0,0),sb,17)
     local tierButtons={}
     local info
     local armed,starting,generation=false,false,0
@@ -2022,16 +2040,22 @@ do
         if itemRule.button then itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac end
     end
     itemRule.stop=stop
-    function itemRule.setTier(tier)
-        itemRule.tier=math.clamp(math.floor(tonumber(tier) or 1),1,3)
-        for i,button in ipairs(tierButtons) do button.BackgroundColor3=i==itemRule.tier and ac or cd end
+    function itemRule.setTiers(tiers)
+        for i,button in ipairs(tierButtons) do
+            itemRule.tiers[i]=type(tiers)=="table" and tiers[i]==true
+            button.BackgroundColor3=itemRule.tiers[i] and ac or cd
+        end
     end
     for i=1,3 do
         local b=bt(p9,"🧪\n"..i.." ТИР",u(1/3,-8,0,55),u((i-1)/3,4,0,23),cd,8,1)
         b.TextSize=14 b.TextWrapped=true tierButtons[i]=b
-        b.Activated:Connect(function() if armed or starting then stop() end itemRule.setTier(i) end)
+        b.Activated:Connect(function()
+            if armed or starting then stop() end
+            itemRule.tiers[i]=not itemRule.tiers[i]
+            b.BackgroundColor3=itemRule.tiers[i] and ac or cd
+        end)
     end
-    itemRule.setTier(1)
+    itemRule.setTiers({true,false,false})
     lb(p9,"Интервал (мин):",u(0.52,0,0,25),u(0,4,0,85),sb,17)
     itemRule.interval=bx(p9,"15",u(0.42,-4,0,25),u(0.58,0,0,85))
     lb(p9,"Порог круток:",u(0.52,0,0,25),u(0,4,0,116),sb,17)
@@ -2042,19 +2066,24 @@ do
         mode.Text=itemRule.mode=="timer" and "РЕЖИМ: ТАЙМЕР" or "РЕЖИМ: ПО КРУТКАМ"
     end
     mode.Activated:Connect(function() if armed or starting then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") end)
-    info=lb(p9,"Три зелья выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
+    info=lb(p9,"По три зелья каждого выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
     itemRule.button=bt(p9,"АВТО-ЗЕЛЬЯ: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
-    local function useTier(current,tier)
+    local function useTiers(current,tiers)
         local inventory=Rem:FindFirstChild("Inventory")
         if not inventory then info.Text="Ошибка: Inventory не найден." return end
-        local successes=0
-        for _,kind in ipairs({"luck","speed","money"}) do
-            if current~=generation or not g.Parent then return end
-            local ok,result=pcall(function() return inventory:InvokeServer("use","potion_"..kind.."_"..tier) end)
-            if ok and type(result)=="number" and result>0 then successes+=1 end
-            task.wait(0.5)
+        local successes,attempts=0,0
+        for tier=1,3 do
+            if tiers[tier] then
+                for _,kind in ipairs({"luck","speed","money"}) do
+                    if current~=generation or not g.Parent then return end
+                    attempts+=1
+                    local ok,result=pcall(function() return inventory:InvokeServer("use","potion_"..kind.."_"..tier) end)
+                    if ok and type(result)=="number" and result>0 then successes+=1 end
+                    task.wait(0.5)
+                end
+            end
         end
-        if current==generation then info.Text="Использовано зелий: "..successes.." из 3." end
+        if current==generation then info.Text="Использовано зелий: "..successes.." из "..attempts.."." end
     end
     local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
         if type(state)~="table" or type(state.rollCount)~="number" then return end
@@ -2062,15 +2091,16 @@ do
         observedCount=count observedVersion+=1
         if not armed or itemRule.mode~="rolls" then return end
         if lastCount and lastCount<target and count>=target then
-            local current,tier=generation,itemRule.tier
+            local current,tiers=generation,table.clone(itemRule.tiers)
             armed=false itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac
-            task.spawn(useTier,current,tier)
+            task.spawn(useTiers,current,tiers)
         end
         lastCount=count
     end)
     g.Destroying:Connect(function() stop() connection:Disconnect() end)
     itemRule.button.Activated:Connect(function()
         if armed or starting then stop() info.Text="Авто-зелья остановлены." return end
+        if not (itemRule.tiers[1] or itemRule.tiers[2] or itemRule.tiers[3]) then info.Text="Выбери хотя бы один тир." return end
         local interval=tonumber(itemRule.interval.Text)
         if itemRule.mode=="timer" then
             if not interval or interval<1 or interval>1440 then info.Text="Укажи интервал от 1 до 1440 минут." return end
@@ -2078,7 +2108,7 @@ do
             armed=true itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
             task.spawn(function()
                 while armed and current==generation and g.Parent do
-                    useTier(current,itemRule.tier)
+                    useTiers(current,itemRule.tiers)
                     local untilTime=os.clock()+interval*60
                     while armed and current==generation and g.Parent and os.clock()<untilTime do task.wait(math.min(5,math.max(0.1,untilTime-os.clock()))) end
                 end
@@ -2113,7 +2143,8 @@ do
 
     local function applyTabFields(config)
         itemRule.stop()
-        itemRule.setTier(config.potionTier or (type(config.itemIds)=="string" and tonumber(config.itemIds:match("potion_%a+_(%d)"))) or 1)
+        local oldTier=math.clamp(math.floor(tonumber(config.potionTier) or (type(config.itemIds)=="string" and tonumber(config.itemIds:match("potion_%a+_(%d)"))) or 1),1,3)
+        itemRule.setTiers(type(config.potionTiers)=="table" and config.potionTiers or {oldTier==1,oldTier==2,oldTier==3})
         itemRule.setMode(config.potionMode)
         itemRule.interval.Text=tostring(configNumber(tonumber(config.potionInterval),15,1,1440))
         itemRule.threshold.Text=type(config.itemThreshold)=="string" and config.itemThreshold or "100"
@@ -2167,7 +2198,7 @@ do
                 optimization=table.clone(optCfg),
                 traderFilters={true,true,false},
                 traderReserve=configNumber(savedConfig.traderReserve,0,0,1e15),
-                potionTier=itemRule.tier, potionMode=itemRule.mode, potionInterval=itemRule.interval.Text, itemThreshold=itemRule.threshold.Text,
+                potionTiers=table.clone(itemRule.tiers), potionMode=itemRule.mode, potionInterval=itemRule.interval.Text, itemThreshold=itemRule.threshold.Text,
                 afkOn=afkOn,
                 mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
                 stallLevels=table.clone(stallLevels),
