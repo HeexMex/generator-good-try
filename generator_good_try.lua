@@ -41,6 +41,64 @@ local GM,ML,MB,PS,ST=Rem.GetMarket,Rem.MarketLot,Rem.MarketBuy,Rem.Post,Rem.Stal
 if C:FindFirstChild("ZS") then C.ZS:Destroy() end
 
 local g=Instance.new("ScreenGui",C) g.Name,g.ResetOnSpawn,g.IgnoreGuiInset="ZS",false,true
+
+-- Нажимаем только Reconnect в системном окне ошибки Roblox.
+do
+    local running=true
+    local nextAttempt=0
+    local inputOk,input=pcall(function() return game:GetService("VirtualInputManager") end)
+    if not inputOk or not input then
+        warn("[GGT] Автореконнект недоступен: executor не предоставляет VirtualInputManager")
+    else
+        local function visibleInPrompt(button,prompt)
+            local node=button
+            while node do
+                if node:IsA("GuiObject") and not node.Visible then return false end
+                if node:IsA("ScreenGui") and not node.Enabled then return false end
+                if node==prompt then return true end
+                node=node.Parent
+            end
+            return false
+        end
+        local function isReconnect(button)
+            if not button:IsA("GuiButton") then return false end
+            local label=button:IsA("TextButton") and button or button:FindFirstChild("ButtonText",true)
+            if not label or not (label:IsA("TextLabel") or label:IsA("TextButton")) then return false end
+            local text=label.Text:match("^%s*(.-)%s*$")
+            return text=="Reconnect" or text=="Переподключиться"
+        end
+        local function tryReconnect()
+            local promptGui=C:FindFirstChild("RobloxPromptGui")
+            local overlay=promptGui and promptGui:FindFirstChild("promptOverlay")
+            local prompt=overlay and overlay:FindFirstChild("ErrorPrompt")
+            if not prompt or not promptGui.Enabled or not visibleInPrompt(prompt,overlay) then return end
+            for _,button in ipairs(prompt:GetDescendants()) do
+                if isReconnect(button) and visibleInPrompt(button,prompt) then
+                    local size,pos=button.AbsoluteSize,button.AbsolutePosition
+                    if size.X<=0 or size.Y<=0 then return end
+                    local x,y=pos.X+size.X/2,pos.Y+size.Y/2
+                    nextAttempt=os.clock()+15
+                    local ok,err=pcall(function()
+                        input:SendMouseButtonEvent(x,y,0,true,game,0)
+                        input:SendMouseButtonEvent(x,y,0,false,game,0)
+                    end)
+                    if not ok then warn("[GGT] Не удалось нажать Reconnect: "..tostring(err)) end
+                    return
+                end
+            end
+        end
+        g.Destroying:Connect(function() running=false end)
+        task.spawn(function()
+            while running do
+                if os.clock()>=nextAttempt then
+                    local ok,err=pcall(tryReconnect)
+                    if not ok then nextAttempt=os.clock()+15 warn("[GGT] Ошибка автореконнекта: "..tostring(err)) end
+                end
+                task.wait(2)
+            end
+        end)
+    end
+end
 local u,c=UDim2.new,Color3.fromRGB
 local bg,sd,cd,ac,tx,sb=c(15,15,21),c(21,21,29),c(27,27,37),c(130,85,255),c(242,242,247),c(145,145,165)
 local strokeColor,danger=c(44,44,58),c(200,55,65)
@@ -1617,7 +1675,7 @@ do
         while g.Parent do
             if cfg.enabled and type(requestFn)=="function" and validUrl(cfg.url) and cfg.token~="" then
                 seq=seq+1
-                local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last}
+                local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
                 local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
                 if panel.Visible then status.Text=ok and type(response)=="table" and (response.StatusCode or response.Status)==200 and "Статистика отправлена." or "Не удалось отправить статистику." end
             end
