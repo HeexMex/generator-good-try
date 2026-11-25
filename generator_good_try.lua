@@ -1,4 +1,5 @@
 local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("ReplicatedStorage"),game:GetService("CoreGui"),game:GetService("Players"),game:GetService("VirtualUser"),game:GetService("Lighting"),game:GetService("RunService")
+local extra={}
 local plr=P.LocalPlayer
 local Http=game:GetService("HttpService")
 local accountPrefix="GGT/config_"..tostring(plr.UserId)
@@ -147,6 +148,7 @@ local p6=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTrans
 local p7=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false,ClipsDescendants=true},m)
 local p9=ui("Frame",{Size=u(1,-112,1,-44),Position=u(0,105,0,39),BackgroundTransparency=1,Visible=false},m)
 local pgs,tbs={p1,p4,p6,p5,p7,p9},{}
+extra.navScroll=ui("ScrollingFrame",{Size=u(1,-2,1,-83),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,CanvasSize=u(0,0,0,212)},sdF)
 local function showPage(index)
     for i,tab in ipairs(tbs) do
         pgs[i].Visible = i==index
@@ -154,12 +156,12 @@ local function showPage(index)
     end
 end
 for i,nm in ipairs({"Снайпер","Торгаш","Ларёк","Почта","Настройки","Предметы"}) do
-    local tb=bt(sdF,nm,u(1,-12,0,28),u(0,6,0,8+(i-1)*34),i==1 and ac or cd,7)
+    local tb=bt(extra.navScroll,nm,u(1,-12,0,28),u(0,6,0,8+(i-1)*34),i==1 and ac or cd,7)
     tbs[i]=tb
     tb.Activated:Connect(function() showPage(i) end)
 end
 
-local configB=bt(sdF,"Конфиги",u(1,-12,0,28),u(0,6,1,-81),cd,7,1)
+local configB=bt(sdF,"Конфиги",u(1,-12,0,28),u(0,6,1,-76),cd,7,1)
 local avatarImage="rbxthumb://type=AvatarHeadShot&id="..tostring(plr.UserId).."&w=100&h=100"
 do
     local profile=ui("Frame",{Size=u(1,-12,0,40),Position=u(0,6,1,-46),BackgroundColor3=cd},sdF,7,1)
@@ -221,7 +223,7 @@ local st=lb(stC,"Ожидание | Успешных покупок: 0",u(1,-14,
 local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
 local refreshTraderFilters
 do
-    local trCard=ui("Frame",{Size=u(1,0,0,158),BackgroundColor3=cd},p4,8,1)
+    local trCard=ui("Frame",{Size=u(1,0,0,194),BackgroundColor3=cd},p4,8,1)
     local function normalizeItemName(value)
         value = value:gsub("<[^>]*>", ""):gsub(utf8.char(160), " "):gsub(utf8.char(8239), " ")
         return value:lower():gsub(utf8.charpattern,function(letter)
@@ -243,11 +245,12 @@ do
             return name:find("%f[%w]v%f[%W]") or name:find("%f[%d]5%s*тир")
                 or name:find("тир%s+5%f[%D]") or name:find("%s5%s*$")
         end},
+        {name="Ролл удачи ×100K", matches=function(name) return false end},
     }
 
     lb(trCard,"Фильтр ассортимента",u(1,-24,0,28),u(0,12,0,8),tx,18).TextSize = 13
     for index,filter in ipairs(filters) do
-        filter.enabled = type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false
+        filter.enabled = index==3 and type(savedConfig.traderFilters)=="table" and savedConfig.traderFilters[index]==true or index~=3 and (type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false)
         local y = 45+(index-1)*34
         lb(trCard,filter.name,u(1,-144,0,28),u(0,12,0,y),sb)
         filter.status = lb(trCard,"—",u(0,84,0,28),u(1,-140,0,y),sb,17,Enum.TextXAlignment.Right)
@@ -255,7 +258,7 @@ do
         filter.toggle = toggle
         toggle.Activated:Connect(function()
             filter.enabled = not filter.enabled
-            if type(savedConfig.traderFilters)~="table" then savedConfig.traderFilters={true,true} end
+            if type(savedConfig.traderFilters)~="table" then savedConfig.traderFilters={true,true,false} end
             savedConfig.traderFilters[index]=filter.enabled
             toggle.Text = filter.enabled and "ON" or "OFF"
             toggle.BackgroundColor3 = filter.enabled and ac or bg
@@ -264,7 +267,7 @@ do
     local balanceBox
     refreshTraderFilters=function()
         for index,filter in ipairs(filters) do
-            filter.enabled=type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false
+            filter.enabled=index==3 and type(savedConfig.traderFilters)=="table" and savedConfig.traderFilters[index]==true or index~=3 and (type(savedConfig.traderFilters)~="table" or savedConfig.traderFilters[index]~=false)
             filter.toggle.Text=filter.enabled and "ON" or "OFF"
             filter.toggle.BackgroundColor3=filter.enabled and ac or bg
         end
@@ -273,7 +276,7 @@ do
     balanceBox=bx(p4,tostring(configNumber(savedConfig.traderReserve,0,0,1e15)),u(0.48,0,0,27),u(0,0,1,-75))
     local balanceLabel=lb(p4,"Остаток ₽:",u(0.48,0,0,27),u(0.52,0,1,-75),sb,17)
     local action=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,36),u(0,0,1,-40),ac,8)
-    local hint = lb(trCard,"Проверка торговца через сервер.",u(1,-24,0,30),u(0,12,0,117),sb,17)
+    local hint = lb(trCard,"Проверка торговца через сервер.",u(1,-24,0,30),u(0,12,0,153),sb,17)
     hint.TextWrapped=true
     local running=false
     local session=0
@@ -283,6 +286,7 @@ do
     local function matchesId(filterIndex,id)
         if type(id)~="string" then return false end
         if filterIndex==1 then return id=="roll_1000000" end
+        if filterIndex==3 then return id=="roll_100000" end
         return id=="elixir_5" or id:match("^potion_%a+_5$")~=nil
     end
     local function invoke(remote,...)
@@ -389,8 +393,9 @@ do
 
     local attachments=ui("Frame",{Size=u(1,0,0,50),Position=u(0,0,0,56),BackgroundColor3=cd},p5,8,1)
     lb(attachments,"Сумма (₽) и номера:",u(1,-14,0,15),u(0,8,0,3),sb,17)
-    sumBox=bx(attachments,"0",u(0.48,0,0,24),u(0,8,0,20))
-    pickB=bt(attachments,"Номера: 0",u(0.46,0,0,24),u(0.52,-4,0,20),bg,6,1)
+    sumBox=bx(attachments,"0",u(0.34,-4,0,24),u(0,8,0,20))
+    pickB=bt(attachments,"Номера: 0",u(0.32,-4,0,24),u(0.34,4,0,20),bg,6,1)
+    extra.itemPickB=bt(attachments,"Предм.: 0",u(0.34,-12,0,24),u(0.66,4,0,20),bg,6,1)
 
     local history=ui("Frame",{Size=u(1,0,0,76),Position=u(0,0,0,112),BackgroundColor3=cd},p5,8,1)
     mSt=lb(history,"Впиши сумму или выбери номера, затем нажми Отправить.",u(1,-16,0,22),u(0,8,0,4),sb,17)
@@ -496,9 +501,10 @@ local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
 local afkOn=true
 local bindB,afkB,mailDelayBox,stallDelayBox
+extra.settingsRows=ui("ScrollingFrame",{Size=u(1,0,1,-82),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,CanvasSize=u(0,0,0,280)},p7)
 do
     local function settingRow(y)
-        return ui("Frame",{Size=u(1,0,0,36),Position=u(0,0,0,y),BackgroundColor3=cd},p7,8,1)
+        return ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,y),BackgroundColor3=cd},extra.settingsRows,8,1)
     end
 
     local hotkeyRow=settingRow(0)
@@ -522,7 +528,7 @@ do
     local upkeepInterval = 60 * 60
     local upkeepEnabled = false
     local nextUpkeep = 0
-    local row = ui("Frame", {Size=u(1,0,0,36), Position=u(0,0,0,160), BackgroundColor3=cd}, p7, 8, 1)
+    local row = ui("Frame", {Size=u(1,-5,0,36), Position=u(0,0,0,160), BackgroundColor3=cd}, extra.settingsRows, 8, 1)
     lb(row, "Автопродление номеров (раз в час)", u(0.81,0,1,0), u(0,10,0,0), sb)
     local toggle = bt(row, "OFF", u(0,46,0,24), u(1,-54,0,6), bg, 6, 1)
     toggle.Activated:Connect(function()
@@ -548,6 +554,51 @@ do
             task.wait(1)
         end
     end)
+end
+
+do
+    local enabled,busy=false,false
+    local latest=nil
+    local row=ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,200),BackgroundColor3=cd},extra.settingsRows,8,1)
+    lb(row,"Автосбор заданий",u(0.75,0,1,0),u(0,10,0,0),sb)
+    local toggle=bt(row,"OFF",u(0,46,0,24),u(1,-54,0,6),bg,6,1)
+    toggle.Activated:Connect(function() enabled=not enabled toggle.Text=enabled and "ON" or "OFF" toggle.BackgroundColor3=enabled and ac or bg end)
+    local changed=Rem:FindFirstChild("StateChanged")
+    local connection=changed and changed.OnClientEvent:Connect(function(state) if type(state)=="table" then latest=state end end)
+    task.spawn(function()
+        while g.Parent do
+            if enabled and not busy then
+                busy=true
+                local getState,claim=Rem:FindFirstChild("GetState"),Rem:FindFirstChild("ClaimTask")
+                local ok,state=false,nil
+                if getState then ok,state=pcall(function() return getState:InvokeServer() end) end
+                if ok and type(state)=="table" then latest=state end
+                local tasks=type(latest)=="table" and latest.tasks
+                if claim and type(tasks)=="table" and type(tasks.list)=="table" and type(tasks.progress)=="table" and type(tasks.claimed)=="table" then
+                    for _,entry in ipairs(tasks.list) do
+                        if not enabled or not g.Parent then break end
+                        if type(entry)=="table" and type(entry.id)=="string" and type(entry.need)=="number" and (tonumber(tasks.progress[entry.id]) or 0)>=entry.need and not tasks.claimed[entry.id] then
+                            pcall(function() return claim:InvokeServer(entry.id) end)
+                            task.wait(0.5)
+                        end
+                    end
+                    local weekly=latest.weekly
+                    if enabled and type(weekly)=="table" and not weekly.claimed and type(weekly.need)=="number" and (tonumber(weekly.progress) or 0)>=weekly.need then
+                        pcall(function() return claim:InvokeServer("weekly") end)
+                    end
+                end
+                busy=false
+            end
+            task.wait(30)
+        end
+    end)
+    g.Destroying:Connect(function() if connection then connection:Disconnect() end end)
+end
+
+do
+    local row=ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,240),BackgroundColor3=cd},extra.settingsRows,8,1)
+    lb(row,"Клавиша AFK (Esc — убрать):",u(0.62,0,1,0),u(0,10,0,0),sb)
+    extra.afkBindB=bt(row,"Не задана",u(0.35,-8,0,24),u(0.65,0,0,6),bg,6,1)
 end
 
 local function configOptimization(raw)
@@ -655,7 +706,7 @@ local function addMailLog(txt,tipText)
     mLogScroll.CanvasPosition=Vector2.new(0,math.max(0,mailLogCount*25-mLogScroll.AbsoluteWindowSize.Y))
 end
 
-local selPlates,sentPlates={},{}
+local selPlates,sentPlates,mailItems={},{},{}
 local function countSel() local n=0 for _ in pairs(selPlates) do n=n+1 end return n end
 local function updPickTxt() pickB.Text="Номера: "..countSel() end
 
@@ -664,10 +715,47 @@ local function plateId(item)
     return rawget(item,"uid") or rawget(item,"sn") or rawget(item,"id")
 end
 
+extra.mailInventoryCache=nil
 local function scanMyPlates(sortByLabel)
     local pref,bestMap,bestCnt=tostring(plr.UserId).."_",{},0
     local mounted,hasMountState = {},false
-    if type(getgc)=="function" then
+    local function markEquipped(state,inventory)
+        local function mark(index)
+            if type(index)=="number" and index>0 then local id=plateId(rawget(inventory,index)) if type(id)=="string" then mounted[id]=true end end
+        end
+        mark(state.car) mark(state.hand)
+        if type(state.wall)=="table" then for _,index in ipairs(state.wall) do mark(index) end end
+    end
+    local function available(item)
+        local expiry=tonumber(rawget(item,"paidUntil"))
+        return not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") and not rawget(item,"fav") and (not expiry or expiry>=workspace:GetServerTimeNow())
+    end
+    local getState=Rem:FindFirstChild("GetState")
+    if getState then
+        local ok,state=pcall(function() return getState:InvokeServer() end)
+        if ok and type(state)=="table" then
+            local inventory=state.inventory or state.rawInventory
+            if type(inventory)=="table" then extra.mailInventoryCache=inventory
+            elseif state.sameInventory~=true then extra.mailInventoryCache=nil end
+            local index=state.car
+            if index==nil and state.hasCar==false then index=0 end
+            if type(extra.mailInventoryCache)=="table" and type(index)=="number" and index>=0 then
+                local mountedId=plateId(rawget(extra.mailInventoryCache,index))
+                if index==0 or type(mountedId)=="string" then
+                    hasMountState=true
+                    markEquipped(state,extra.mailInventoryCache)
+                    for _,item in ipairs(extra.mailInventoryCache) do
+                        local idV,txtV=plateId(item),type(item)=="table" and rawget(item,"text")
+                        if type(idV)=="string" and idV:sub(1,#pref)==pref and type(txtV)=="string" then
+                            bestCnt+=1
+                            if not sentPlates[idV] and available(item) then bestMap[idV]=txtV.." ["..tostring(rawget(item,"rarity") or "").."]" end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not hasMountState and type(getgc)=="function" then
         for _,obj in ipairs(getgc(true)) do
             if type(obj)~="table" then continue end
             local inventory,index = rawget(obj,"inventory"),rawget(obj,"car")
@@ -676,7 +764,8 @@ local function scanMyPlates(sortByLabel)
                 local id = plateId(rawget(inventory,index))
                 if index ~= 0 and (type(id)~="string" or id:sub(1,#pref)~=pref) then continue end
                 hasMountState = true
-                if index > 0 then mounted[id] = true end
+                extra.mailInventoryCache=rawget(obj,"rawInventory") or inventory
+                markEquipped(obj,inventory)
                 local valid,tmp=0,{}
                 for _,item in ipairs(inventory) do
                     if type(item)=="table" then
@@ -684,7 +773,7 @@ local function scanMyPlates(sortByLabel)
                         local txtV=rawget(item,"text")
                         if type(idV)=="string" and idV:sub(1,#pref)==pref and type(txtV)=="string" then
                             valid=valid+1
-                            if not sentPlates[idV] and not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") then
+                            if not sentPlates[idV] and available(item) then
                                 tmp[idV]=txtV.." ["..tostring(rawget(item,"rarity") or "").."]"
                             end
                         end
@@ -780,6 +869,68 @@ pickB.MouseButton1Click:Connect(function()
     end
     pModal.Visible=true
 end)
+
+do
+    local panel=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=11},p5,8,1)
+    local heading=lb(panel,"Роллы, эликсиры, зелья V",u(1,-16,0,24),u(0,8,0,4),tx,18) heading.ZIndex=12
+    local list=ui("ScrollingFrame",{Size=u(1,-10,1,-72),Position=u(0,5,0,30),BackgroundTransparency=1,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=12},panel)
+    local status=lb(panel,"",u(1,-106,0,27),u(0,6,1,-33),sb,17) status.ZIndex=12
+    local done=bt(panel,"Готово",u(0,90,0,27),u(1,-96,1,-33),ac,6) done.ZIndex=12
+    local function total() local n=0 for _,v in pairs(mailItems) do n+=v end return n end
+    local function refreshButton() extra.itemPickB.Text="Предм.: "..total() end
+    local function eligible(id)
+        return type(id)=="string" and (id:match("^potion_%a+_5$") or id:match("^elixir_%d+$") or id:match("^roll_%d+$"))~=nil
+    end
+    local function inventory()
+        local stateRemote=Rem:FindFirstChild("GetState")
+        if stateRemote then
+            local ok,state=pcall(function() return stateRemote:InvokeServer() end)
+            if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots end
+        end
+        if type(getgc)=="function" then
+            for _,object in ipairs(getgc(true)) do
+                if type(object)=="table" and type(rawget(object,"slots"))=="table" then
+                    local slots=rawget(object,"slots")
+                    for _,slot in ipairs(slots) do if type(slot)=="table" and eligible(rawget(slot,"id")) and type(rawget(slot,"n"))=="number" then return slots end end
+                end
+            end
+        end
+    end
+    local function displayName(id)
+        local kind,level=id:match("^potion_(%a+)_(%d+)$")
+        local names={luck="Удача",speed="Скорость",money="Деньги"}
+        if kind then return "🧪 "..(names[kind] or kind).." · тир "..level end
+        local n=id:match("^roll_(%d+)$")
+        if n then return "🎲 Ролл ×"..n end
+        return "✨ "..id
+    end
+    extra.itemPickB.Activated:Connect(function()
+        panel.Visible=true status.Text="Обновляю инвентарь..."
+        for _,child in ipairs(list:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
+        local slots=inventory()
+        if type(slots)~="table" then status.Text="Нет данных инвентаря." return end
+        local row=0
+        for _,slot in ipairs(slots) do
+            if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" and slot.n>0 then
+                local id,available=slot.id,math.floor(slot.n)
+                row+=1
+                local frame=ui("Frame",{Size=u(1,-6,0,32),Position=u(0,2,0,(row-1)*35),BackgroundColor3=cd,ZIndex=12},list,6,1)
+                local title=lb(frame,displayName(id).." ("..available..")",u(1,-68,1,0),u(0,6,0,0),tx,17) title.ZIndex=13 title.TextTruncate=Enum.TextTruncate.AtEnd
+                local quantity=bx(frame,tostring(mailItems[id] or 0),u(0,54,0,24),u(1,-60,0,4)) quantity.ZIndex=13
+                quantity.FocusLost:Connect(function()
+                    local old=mailItems[id] or 0
+                    local number=math.floor(tonumber(quantity.Text) or 0)
+                    number=math.clamp(number,0,math.min(available,90-(total()-old)))
+                    mailItems[id]=number>0 and number or nil quantity.Text=tostring(number)
+                    refreshButton() status.Text="Всего: "..total().." / 90"
+                end)
+            end
+        end
+        list.CanvasSize=u(0,0,0,row*35)
+        status.Text=row>0 and ("Всего: "..total().." / 90") or "Доступных предметов нет."
+    end)
+    done.Activated:Connect(function() panel.Visible=false refreshButton() end)
+end
 pAllB.Activated:Connect(function()
     if refreshModal()==0 then return end
     for _,item in ipairs(pickerItems) do selPlates[item.id]=true end
@@ -792,6 +943,7 @@ local run,takeRun,stRun,okC,lN=false,false,false,0,0
 local sniperSession=0
 local takenPosts={}
 local menuKey,waitingBind=Enum.KeyCode.RightControl,false
+extra.afkKey,extra.waitingAfkBind=Enum.KeyCode.Unknown,false
 local function configMenuKey(name)
     if type(name)=="string" then
         local ok,key = pcall(function() return Enum.KeyCode[name] end)
@@ -801,6 +953,8 @@ local function configMenuKey(name)
 end
 menuKey=configMenuKey(savedConfig.menuKey)
 bindB.Text=menuKey.Name
+if type(savedConfig.afkKey)=="string" then local ok,key=pcall(function() return Enum.KeyCode[savedConfig.afkKey] end) if ok and key then extra.afkKey=key end end
+extra.afkBindB.Text=extra.afkKey~=Enum.KeyCode.Unknown and extra.afkKey.Name or "Не задана"
 
 local originalProperties,originalGuiProperties={},{}
 local sceneConnections,guiConnections={},{}
@@ -992,10 +1146,11 @@ do
         end
         local navHeight = useModern and 34 or 28
         for index,button in ipairs(tbs) do
-            button.Size = u(1,-12,navHeight/286,0)
-            button.Position = u(0,6,(8+(index-1)*(navHeight+6))/286,0)
+            button.Size = u(1,-12,0,navHeight)
+            button.Position = u(0,6,0,8+(index-1)*(navHeight+6))
             button.TextSize = useModern and 12 or 11
         end
+        extra.navScroll.CanvasSize=u(0,0,0,8+#tbs*(navHeight+6))
         mB.Size,cB.Size = u(0,useModern and 28 or 24,0,useModern and 26 or 22),u(0,useModern and 28 or 24,0,useModern and 26 or 22)
         mB.Position,cB.Position = u(1,useModern and -68 or -54,0,useModern and 4 or 6),u(1,useModern and -34 or -27,0,useModern and 4 or 6)
         for _,button in ipairs({optOpenB,customB,configB,openAfk,tB,stAutoB,mSendB,mTakeB}) do
@@ -1566,7 +1721,8 @@ local exitAfkMode = (function()
         return true
     end
     closeAfk.Activated:Connect(exitAfkMode)
-    openAfk.Activated:Connect(function()
+    extra.enterAfkMode=function()
+        if overlay.Visible then return end
         previousOpt,previousOrder = appliedOpt,g.DisplayOrder
         startedAt = os.clock()
         tipBox.Visible = false
@@ -1580,7 +1736,8 @@ local exitAfkMode = (function()
             shadows=true, materials=true, textures=true, particles=true,
             cleanup=optCfg.cleanup, no3d=true, hideui=true, fps=optCfg.fps,
         })
-    end)
+    end
+    openAfk.Activated:Connect(extra.enterAfkMode)
     task.spawn(function()
         while g.Parent do
             if overlay.Visible then refreshAfk() end
@@ -1802,12 +1959,26 @@ yB.MouseButton1Click:Connect(function()
     if appliedOpt then applyCustomOpt(nil) end
     g:Destroy()
 end)
-bindB.MouseButton1Click:Connect(function() waitingBind=true bindB.Text="Нажми клавишу..." end)
+bindB.MouseButton1Click:Connect(function() extra.waitingAfkBind=false waitingBind=true bindB.Text="Нажми клавишу..." end)
+extra.afkBindB.MouseButton1Click:Connect(function() waitingBind=false extra.waitingAfkBind=true extra.afkBindB.Text="Нажми клавишу..." end)
 afkB.MouseButton1Click:Connect(function() afkOn=not afkOn afkB.BackgroundColor3=afkOn and ac or bg afkB.Text=afkOn and "ON" or "OFF" end)
 local idleConnection = plr.Idled:Connect(function() if afkOn and g.Parent then pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end end)
 local hotkey = U.InputBegan:Connect(function(i,gp)
     if not g.Parent then return end
-    if waitingBind and i.UserInputType==Enum.UserInputType.Keyboard then waitingBind=false menuKey=i.KeyCode bindB.Text=i.KeyCode.Name return end
+    if extra.waitingAfkBind and i.UserInputType==Enum.UserInputType.Keyboard then
+        extra.waitingAfkBind=false
+        if i.KeyCode==Enum.KeyCode.Escape then extra.afkKey=Enum.KeyCode.Unknown
+        elseif i.KeyCode~=menuKey then extra.afkKey=i.KeyCode end
+        extra.afkBindB.Text=extra.afkKey~=Enum.KeyCode.Unknown and extra.afkKey.Name or "Не задана"
+        return
+    end
+    if waitingBind and i.UserInputType==Enum.UserInputType.Keyboard then
+        waitingBind=false if i.KeyCode~=extra.afkKey then menuKey=i.KeyCode end bindB.Text=menuKey.Name return
+    end
+    if not gp and extra.afkKey~=Enum.KeyCode.Unknown and i.KeyCode==extra.afkKey then
+        if not exitAfkMode() then extra.enterAfkMode() end
+        return
+    end
     if not gp and i.KeyCode==menuKey then
         if exitAfkMode() then return end
         dlg.Visible=false
@@ -1821,78 +1992,96 @@ g.Destroying:Connect(function()
     hotkey:Disconnect()
 end)
 
--- The counter is server-owned; a batch may cross a threshold between updates.
-local itemRule={}
+-- Выбор тира и запуск по таймеру или один раз по счётчику круток.
+local itemRule={tier=1,mode="timer"}
 do
-    lb(p9,"ID предметов через запятую:",u(1,-8,0,20),u(0,4,0,2),sb,17)
-    itemRule.items=bx(p9,"",u(1,-8,0,28),u(0,4,0,24))
-    itemRule.items.PlaceholderText="potion_luck_1, potion_speed_1"
-    lb(p9,"Один раз при числе круток:",u(1,-8,0,20),u(0,4,0,57),sb,17)
-    itemRule.threshold=bx(p9,"100",u(1,-8,0,28),u(0,4,0,79))
-    local info=lb(p9,"Выбери предметы и включи правило.",u(1,-8,0,60),u(0,4,0,112),sb,17)
-    info.TextWrapped=true
-    local button=bt(p9,"ПРАВИЛО: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
-    local armed=false
-    local lastCount=nil
-    local ids={}
-    local target=nil
-    local generation=0
-    local observedCount=nil
-    local observedVersion=0
-    local function reset()
-        armed=false button.Text="ПРАВИЛО: ВЫКЛ" button.BackgroundColor3=ac
+    lb(p9,"Выбери тир зелий (удача, скорость, деньги):",u(1,-8,0,20),u(0,4,0,0),sb,17)
+    local tierButtons={}
+    local info
+    local armed,generation=false,0
+    local lastCount,target,observedCount,observedVersion=nil,nil,nil,0
+    local function stop()
+        generation+=1 armed=false
+        if itemRule.button then itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac end
     end
-    itemRule.stop=function() generation=generation+1 reset() end
+    itemRule.stop=stop
+    function itemRule.setTier(tier)
+        itemRule.tier=math.clamp(math.floor(tonumber(tier) or 1),1,3)
+        for i,button in ipairs(tierButtons) do button.BackgroundColor3=i==itemRule.tier and ac or cd end
+    end
+    for i=1,3 do
+        local b=bt(p9,"🧪\n"..i.." ТИР",u(1/3,-8,0,55),u((i-1)/3,4,0,23),cd,8,1)
+        b.TextSize=14 b.TextWrapped=true tierButtons[i]=b
+        b.Activated:Connect(function() if armed then stop() end itemRule.setTier(i) end)
+    end
+    itemRule.setTier(1)
+    lb(p9,"Интервал (мин):",u(0.52,0,0,25),u(0,4,0,85),sb,17)
+    itemRule.interval=bx(p9,"15",u(0.42,-4,0,25),u(0.58,0,0,85))
+    lb(p9,"Порог круток:",u(0.52,0,0,25),u(0,4,0,116),sb,17)
+    itemRule.threshold=bx(p9,"100",u(0.42,-4,0,25),u(0.58,0,0,116))
+    local mode=bt(p9,"РЕЖИМ: ТАЙМЕР",u(1,-8,0,28),u(0,4,0,148),cd,6,1)
+    function itemRule.setMode(value)
+        itemRule.mode=value=="rolls" and "rolls" or "timer"
+        mode.Text=itemRule.mode=="timer" and "РЕЖИМ: ТАЙМЕР" or "РЕЖИМ: ПО КРУТКАМ"
+    end
+    mode.Activated:Connect(function() if armed then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") end)
+    info=lb(p9,"Три зелья выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
+    itemRule.button=bt(p9,"АВТО-ЗЕЛЬЯ: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
+    local function useTier(current,tier)
+        local inventory=Rem:FindFirstChild("Inventory")
+        if not inventory then info.Text="Ошибка: Inventory не найден." return end
+        local successes=0
+        for _,kind in ipairs({"luck","speed","money"}) do
+            if current~=generation or not g.Parent then return end
+            local ok,result=pcall(function() return inventory:InvokeServer("use","potion_"..kind.."_"..tier) end)
+            if ok and type(result)=="number" and result>0 then successes+=1 end
+            task.wait(0.5)
+        end
+        if current==generation then info.Text="Использовано зелий: "..successes.." из 3." end
+    end
     local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
         if type(state)~="table" or type(state.rollCount)~="number" then return end
         local count=state.rollCount
-        observedCount=count observedVersion=observedVersion+1
-        if not armed then return end
+        observedCount=count observedVersion+=1
+        if not armed or itemRule.mode~="rolls" then return end
         if lastCount and lastCount<target and count>=target then
-            reset()
-            local selected=ids
-            task.spawn(function()
-                local inventory=Rem:FindFirstChild("Inventory")
-                if not inventory then info.Text="Ошибка: Inventory не найден." return end
-                local successes=0
-                for _,id in ipairs(selected) do
-                    if not g.Parent then return end
-                    local ok,result=pcall(function() return inventory:InvokeServer("use",id) end)
-                    if ok and type(result)=="number" and result>0 then successes=successes+1 end
-                end
-                info.Text="Порог достигнут: "..count..". Использовано "..successes.." из "..#selected.."."
-            end)
+            local current,tier=generation,itemRule.tier
+            armed=false itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac
+            task.spawn(useTier,current,tier)
         end
         lastCount=count
     end)
-    g.Destroying:Connect(function() connection:Disconnect() end)
-    button.MouseButton1Click:Connect(function()
-        generation=generation+1
-        local current=generation
-        if armed then reset() info.Text="Правило остановлено." return end
-        local n=tonumber(itemRule.threshold.Text)
-        local selected={}
-        local seen={}
-        for raw in itemRule.items.Text:gmatch("[^,]+") do
-            local id=raw:match("^%s*(.-)%s*$")
-            if id~="" and id:match("^[%w_]+$") and not seen[id] then table.insert(selected,id) seen[id]=true end
+    g.Destroying:Connect(function() stop() connection:Disconnect() end)
+    itemRule.button.Activated:Connect(function()
+        if armed then stop() info.Text="Авто-зелья остановлены." return end
+        local interval=tonumber(itemRule.interval.Text)
+        if itemRule.mode=="timer" then
+            if not interval or interval<1 or interval>1440 then info.Text="Укажи интервал от 1 до 1440 минут." return end
+            generation+=1 local current=generation
+            armed=true itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
+            task.spawn(function()
+                while armed and current==generation and g.Parent do
+                    useTier(current,itemRule.tier)
+                    local untilTime=os.clock()+interval*60
+                    while armed and current==generation and g.Parent and os.clock()<untilTime do task.wait(math.min(5,math.max(0.1,untilTime-os.clock()))) end
+                end
+            end)
+        else
+            local n=tonumber(itemRule.threshold.Text)
+            if not n or n<1 or n%1~=0 then info.Text="Укажи целое число круток." return end
+            local remote=Rem:FindFirstChild("GetState")
+            local ok,state=false,nil
+            local beforeRequest=observedVersion
+            if remote then ok,state=pcall(function() return remote:InvokeServer() end) end
+            if not ok or type(state)~="table" or type(state.rollCount)~="number" then info.Text="Не удалось получить счётчик." return end
+            if observedVersion~=beforeRequest and observedCount then state.rollCount=observedCount end
+            if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." return end
+            generation+=1 target,lastCount=n,state.rollCount armed=true
+            itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
+            info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount.."."
         end
-        if not n or n<1 or n%1~=0 or #selected==0 then info.Text="Укажи целое число и ID предметов." return end
-        info.Text="Получаю счётчик круток..."
-        local remote=Rem:FindFirstChild("GetState")
-        if not remote then info.Text="Ошибка: GetState не найден." return end
-        local beforeRequest=observedVersion
-        local ok,state=pcall(function() return remote:InvokeServer() end)
-        if current~=generation or not g.Parent then return end
-        if not ok or type(state)~="table" or type(state.rollCount)~="number" then info.Text="Не удалось получить счётчик." return end
-        if observedVersion~=beforeRequest and observedCount then state.rollCount=observedCount end
-        if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." return end
-        ids,target,lastCount=selected,n,state.rollCount
-        armed=true button.Text="ПРАВИЛО: ВКЛ" button.BackgroundColor3=c(200,55,65)
-        info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount..". Срабатывание после обновления счётчика."
     end)
 end
-
 
 do
     (function()
@@ -1903,7 +2092,9 @@ do
 
     local function applyTabFields(config)
         itemRule.stop()
-        itemRule.items.Text=type(config.itemIds)=="string" and config.itemIds or ""
+        itemRule.setTier(config.potionTier or (type(config.itemIds)=="string" and tonumber(config.itemIds:match("potion_%a+_(%d)"))) or 1)
+        itemRule.setMode(config.potionMode)
+        itemRule.interval.Text=tostring(configNumber(tonumber(config.potionInterval),15,1,1440))
         itemRule.threshold.Text=type(config.itemThreshold)=="string" and config.itemThreshold or "100"
         if type(config.afkOn)=="boolean" then afkOn=config.afkOn afkB.Text=afkOn and "ON" or "OFF" afkB.BackgroundColor3=afkOn and ac or bg end
         local market=type(config.market)=="table" and config.market or {}
@@ -1948,14 +2139,14 @@ do
         else
             entry={
                 version=1, recipient=recipientBook.primary, recipients=table.clone(recipientBook.names),
-                modern=modernTheme, menuKey=menuKey.Name,
+                modern=modernTheme, menuKey=menuKey.Name, afkKey=extra.afkKey.Name,
                 width=math.clamp(m.Size.X.Offset,435,1600), height=math.clamp(m.Size.Y.Offset,320,1000),
                 mailDelay=configNumber(tonumber(mailDelayBox.Text),4,2,3600),
                 stallDelay=configNumber(tonumber(stallDelayBox.Text),2,1,3600),
                 optimization=table.clone(optCfg),
-                traderFilters={true,true},
+                traderFilters={true,true,false},
                 traderReserve=configNumber(savedConfig.traderReserve,0,0,1e15),
-                itemIds=itemRule.items.Text, itemThreshold=itemRule.threshold.Text,
+                potionTier=itemRule.tier, potionMode=itemRule.mode, potionInterval=itemRule.interval.Text, itemThreshold=itemRule.threshold.Text,
                 afkOn=afkOn,
                 mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
                 stallLevels=table.clone(stallLevels),
@@ -1969,6 +2160,7 @@ do
             end
             if type(savedConfig.traderFilters)=="table" then
                 for i=1,2 do entry.traderFilters[i]=savedConfig.traderFilters[i]~=false end
+                entry.traderFilters[3]=savedConfig.traderFilters[3]==true
             end
         end
         if type(makefolder)=="function" then pcall(makefolder,"GGT") end
@@ -2001,8 +2193,10 @@ do
     local nameBox=bx(card,"",u(0.62,-16,0,28),u(0,12,0,152))
     nameBox.PlaceholderText="Имя нового конфига"
     local createProfile=bt(card,"Создать",u(0.38,-8,0,28),u(0.62,4,0,152),ac,6)
-    local nextProfile=bt(card,"Выбрать конфиг",u(1,-24,0,28),u(0,12,0,187),cd,6,1)
-    nameBox.ZIndex,createProfile.ZIndex,nextProfile.ZIndex=22,22,22
+    local nextProfile=bt(card,"Выбрать конфиг ▾",u(0.62,-16,0,28),u(0,12,0,187),cd,6,1)
+    local publishProfile=bt(card,"Общий ↑",u(0.38,-8,0,28),u(0.62,4,0,187),cd,6,1)
+    local profileList=ui("ScrollingFrame",{Size=u(1,-24,0,120),Position=u(0,12,0,63),BackgroundColor3=cd,Visible=false,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=25},card,6,1)
+    nameBox.ZIndex,createProfile.ZIndex,nextProfile.ZIndex,publishProfile.ZIndex=22,22,22,22
 
     configB.Activated:Connect(function()
         status.Text="Активный: "..activeConfig.." · автосохранение"
@@ -2013,8 +2207,8 @@ do
         if not configReadable then status.Text="Конфиг повреждён или недоступен; запись отключена." return end
         status.Text=saveConfig() and "Текущие настройки сохранены." or "Не удалось записать файл конфига."
     end)
-    local function applyCurrent()
-        local config=readConfig()
+    local function applyCurrent(config)
+        config=config or readConfig()
         if not config then
             status.Text="Не удалось прочитать сохранённый конфиг."
             return false
@@ -2025,6 +2219,9 @@ do
         m.Size=u(0,configNumber(config.width,435,435,1600),0,configNumber(config.height,320,320,1000))
         menuKey,waitingBind=configMenuKey(config.menuKey),false
         bindB.Text=menuKey.Name
+        extra.afkKey=Enum.KeyCode.Unknown
+        if type(config.afkKey)=="string" then local ok,key=pcall(function() return Enum.KeyCode[config.afkKey] end) if ok and key and key~=menuKey then extra.afkKey=key end end
+        extra.waitingAfkBind=false extra.afkBindB.Text=extra.afkKey~=Enum.KeyCode.Unknown and extra.afkKey.Name or "Не задана"
         mailDelayBox.Text=tostring(configNumber(config.mailDelay,4,2,3600))
         stallDelayBox.Text=tostring(configNumber(config.stallDelay,2,1,3600))
         recipientBook.load(config)
@@ -2040,7 +2237,7 @@ do
         status.Text="Конфиг загружен и применён."
         return true
     end
-    apply.Activated:Connect(applyCurrent)
+    apply.Activated:Connect(function() applyCurrent() end)
     local function profiles()
         local result={"default"}
         if type(listfiles)~="function" then return result end
@@ -2074,17 +2271,64 @@ do
         rememberActive()
         status.Text="Активный: "..name.." · автосохранение"
     end)
-    nextProfile.Activated:Connect(function()
-        local names=profiles()
-        if #names<2 then status.Text="Нет других конфигов." return end
-        local index=table.find(names,activeConfig) or 0
-        local name=names[index%#names+1]
+    local function selectProfile(name,shared)
         if not configReadable or not saveConfig() then status.Text="Текущий конфиг недоступен для сохранения." return end
+        local loaded=nil
+        if shared then
+            local ok,data=pcall(function() return Http:JSONDecode(readfile("GGT/shared_config_"..name..".json")) end)
+            if not ok or type(data)~="table" or data.version~=1 then status.Text="Общий конфиг не удалось прочитать." return end
+            loaded=data
+            local base="shared_"..name:sub(1,20)
+            local candidate,index=base,1
+            if type(isfile)~="function" then status.Text="Executor не поддерживает проверку файлов." return end
+            while true do
+                local existsOk,exists=pcall(isfile,configFile(candidate))
+                if not existsOk then status.Text="Не удалось проверить конфиги." return end
+                if not exists then break end
+                index+=1 candidate=base.."_"..index
+                if index>999 then status.Text="Слишком много копий конфига." return end
+            end
+            name=candidate
+            local ok,encoded=pcall(function() return Http:JSONEncode(loaded) end)
+            if not ok or not pcall(writefile,configFile(name),encoded) then status.Text="Не удалось создать личную копию." return end
+        end
         local oldName,oldPath=activeConfig,configPath
         activeConfig,configPath,lastSavedData=name,configFile(name),nil
-        if not applyCurrent() then activeConfig,configPath,lastSavedData=oldName,oldPath,nil return end
+        if not applyCurrent(loaded) then activeConfig,configPath,lastSavedData=oldName,oldPath,nil return end
         rememberActive()
+        profileList.Visible=false
         status.Text="Активный: "..name.." · автосохранение"
+    end
+    publishProfile.Activated:Connect(function()
+        if not configReadable or not saveConfig() then status.Text="Не удалось сохранить текущий конфиг." return end
+        local ok,contents=pcall(readfile,configPath)
+        if not ok or type(contents)~="string" then status.Text="Не удалось прочитать текущий конфиг." return end
+        local written=pcall(writefile,"GGT/shared_config_"..activeConfig..".json",contents)
+        status.Text=written and ("Общий шаблон: "..activeConfig) or "Не удалось создать общий шаблон."
+    end)
+    nextProfile.Activated:Connect(function()
+        profileList.Visible=not profileList.Visible
+        if not profileList.Visible then return end
+        for _,child in ipairs(profileList:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+        local entries={}
+        for _,name in ipairs(profiles()) do table.insert(entries,{name=name,shared=false}) end
+        if type(listfiles)=="function" then
+            local ok,files=pcall(listfiles,"GGT")
+            if ok then
+                for _,file in ipairs(files) do
+                    local basename=file:gsub("\\","/"):match("([^/]+)$")
+                    local name=basename and basename:match("^shared_config_(.-)%.json$")
+                    if validConfigName(name) then table.insert(entries,{name=name,shared=true}) end
+                end
+            end
+        end
+        table.sort(entries,function(a,b) return (a.shared and "1" or "0")..a.name < (b.shared and "1" or "0")..b.name end)
+        for i,entry in ipairs(entries) do
+            local b=bt(profileList,(entry.shared and "🌐 " or "👤 ")..entry.name,u(1,-8,0,27),u(0,3,0,(i-1)*30),entry.name==activeConfig and ac or bg,6)
+            b.ZIndex=26
+            b.Activated:Connect(function() selectProfile(entry.name,entry.shared) end)
+        end
+        profileList.CanvasSize=u(0,0,0,#entries*30)
     end)
     task.spawn(function()
         while g.Parent do
@@ -2133,8 +2377,13 @@ local function sendMail()
     if amt>0 then sumBox.Text=tostring(amt) end
     local platesArr={}
     for k in pairs(selPlates) do table.insert(platesArr,k) end
+    local items,totalItems={},0
+    for id,count in pairs(mailItems) do
+        if type(id)=="string" and type(count)=="number" and count>0 and count%1==0 then items[id]=count totalItems+=count end
+    end
     if clean=="" then mSt.Text="Ошибка: впиши юзернейм." return end
-    if amt<=0 and #platesArr==0 then mSt.Text="Ошибка: выбери номера или впиши сумму > 0." return end
+    if amt<=0 and #platesArr==0 and totalItems==0 then mSt.Text="Выбери номера, предметы или впиши сумму." return end
+    if totalItems>90 then mSt.Text="В посылке не больше 90 предметов." return end
     local plateNames,selectionError = checkMailPlates(platesArr)
     if not plateNames then mSt.Text=selectionError return end
     mSt.Text="Ищу игрока..."
@@ -2147,7 +2396,7 @@ local function sendMail()
     if type(lookRes)=="table" then
         local uData=lookRes.user or lookRes.player or lookRes.data or lookRes
         if type(uData)=="table" then
-            uid=tonumber(uData.userId) or tonumber(uData.id) or tonumber(uData.uid) or 0
+            uid=tonumber(uData.toId) or tonumber(uData.userId) or tonumber(uData.id) or tonumber(uData.uid) or 0
         end
     end
     if uid<=0 then local okId,apiId=pcall(function() return P:GetUserIdFromNameAsync(clean) end) if okId and apiId then uid=apiId end end
@@ -2157,7 +2406,7 @@ local function sendMail()
     if not g.Parent then return end
     plateNames,selectionError = checkMailPlates(platesArr)
     if not plateNames then mSt.Text=selectionError return end
-    local ok,res=pcall(function() return PS:InvokeServer("send",uid,platesArr,{},amt) end)
+    local ok,res=pcall(function() return PS:InvokeServer("send",uid,platesArr,items,amt) end)
     if not g.Parent then return end
     if not ok or type(res)~="table" or not res.ok then
         mSt.Text = ok and type(res)=="table" and res.err and ("Отказ: "..tostring(res.err)) or "Отправка не подтверждена. Проверь исходящие."
@@ -2168,6 +2417,7 @@ local function sendMail()
         sentPlates[id]=true
         selPlates[id]=nil
     end
+    table.clear(mailItems) extra.itemPickB.Text="Предм.: 0"
     mSt.Text="Отправлено -> "..clean
     local pStr=#plateNames>0 and table.concat(plateNames,", ") or "без номеров"
     local shortLine=string.format("Отправлено (%s): %s / %s ₽",clean,pStr,fmtNum(amt))
@@ -2175,6 +2425,7 @@ local function sendMail()
         string.format("<font color=\"#9191A5\">Получатель:</font> <b>%s</b>",clean),
         string.format("<font color=\"#9191A5\">Сумма:</font> <font color=\"#4ADE80\"><b>%s ₽</b></font>",fmtNum(amt))
     }
+    if totalItems>0 then table.insert(tLines,"<font color=\"#9191A5\">Предметов:</font> "..totalItems) end
     if #plateNames>0 then
         table.insert(tLines,"<font color=\"#9191A5\">Номера:</font>")
         for _,pn in ipairs(plateNames) do table.insert(tLines,fmtPlateRich(pn)) end
