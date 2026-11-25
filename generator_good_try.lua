@@ -756,7 +756,8 @@ local function scanMyPlates(sortByLabel)
         end
     end
     if not hasMountState and type(getgc)=="function" then
-        for _,obj in ipairs(getgc(true)) do
+        local gcOk,objects=pcall(getgc,true)
+        for _,obj in ipairs(gcOk and type(objects)=="table" and objects or {}) do
             if type(obj)~="table" then continue end
             local inventory,index = rawget(obj,"inventory"),rawget(obj,"car")
             if index == nil and rawget(obj,"hasCar") == false then index = 0 end
@@ -881,6 +882,7 @@ do
     local function eligible(id)
         return type(id)=="string" and (id:match("^potion_%a+_5$") or id:match("^elixir_%d+$") or id:match("^roll_%d+$"))~=nil
     end
+    local refreshId=0
     local function inventory()
         local stateRemote=Rem:FindFirstChild("GetState")
         if stateRemote then
@@ -888,13 +890,26 @@ do
             if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots end
         end
         if type(getgc)=="function" then
-            for _,object in ipairs(getgc(true)) do
+            local gcOk,objects=pcall(getgc,true)
+            for _,object in ipairs(gcOk and type(objects)=="table" and objects or {}) do
                 if type(object)=="table" and type(rawget(object,"slots"))=="table" then
                     local slots=rawget(object,"slots")
                     for _,slot in ipairs(slots) do if type(slot)=="table" and eligible(rawget(slot,"id")) and type(rawget(slot,"n"))=="number" then return slots end end
                 end
             end
         end
+    end
+    extra.validateMailItems=function(items)
+        local slots=inventory()
+        if type(slots)~="table" then return false,"Не удалось проверить инвентарь предметов." end
+        local available={}
+        for _,slot in ipairs(slots) do
+            if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" then available[slot.id]=slot.n end
+        end
+        for id,count in pairs(items) do
+            if not eligible(id) or count>(available[id] or 0) then return false,"Количество предметов изменилось. Проверь вложения." end
+        end
+        return true
     end
     local function displayName(id)
         local kind,level=id:match("^potion_(%a+)_(%d+)$")
@@ -905,9 +920,11 @@ do
         return "✨ "..id
     end
     extra.itemPickB.Activated:Connect(function()
+        refreshId+=1 local current=refreshId
         panel.Visible=true status.Text="Обновляю инвентарь..."
         for _,child in ipairs(list:GetChildren()) do if child:IsA("Frame") then child:Destroy() end end
         local slots=inventory()
+        if current~=refreshId or not panel.Visible or not g.Parent then return end
         if type(slots)~="table" then status.Text="Нет данных инвентаря." return end
         local row=0
         for _,slot in ipairs(slots) do
@@ -929,7 +946,7 @@ do
         list.CanvasSize=u(0,0,0,row*35)
         status.Text=row>0 and ("Всего: "..total().." / 90") or "Доступных предметов нет."
     end)
-    done.Activated:Connect(function() panel.Visible=false refreshButton() end)
+    done.Activated:Connect(function() refreshId+=1 panel.Visible=false refreshButton() end)
 end
 pAllB.Activated:Connect(function()
     if refreshModal()==0 then return end
@@ -1998,10 +2015,10 @@ do
     lb(p9,"Выбери тир зелий (удача, скорость, деньги):",u(1,-8,0,20),u(0,4,0,0),sb,17)
     local tierButtons={}
     local info
-    local armed,generation=false,0
+    local armed,starting,generation=false,false,0
     local lastCount,target,observedCount,observedVersion=nil,nil,nil,0
     local function stop()
-        generation+=1 armed=false
+        generation+=1 armed=false starting=false
         if itemRule.button then itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac end
     end
     itemRule.stop=stop
@@ -2012,7 +2029,7 @@ do
     for i=1,3 do
         local b=bt(p9,"🧪\n"..i.." ТИР",u(1/3,-8,0,55),u((i-1)/3,4,0,23),cd,8,1)
         b.TextSize=14 b.TextWrapped=true tierButtons[i]=b
-        b.Activated:Connect(function() if armed then stop() end itemRule.setTier(i) end)
+        b.Activated:Connect(function() if armed or starting then stop() end itemRule.setTier(i) end)
     end
     itemRule.setTier(1)
     lb(p9,"Интервал (мин):",u(0.52,0,0,25),u(0,4,0,85),sb,17)
@@ -2024,7 +2041,7 @@ do
         itemRule.mode=value=="rolls" and "rolls" or "timer"
         mode.Text=itemRule.mode=="timer" and "РЕЖИМ: ТАЙМЕР" or "РЕЖИМ: ПО КРУТКАМ"
     end
-    mode.Activated:Connect(function() if armed then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") end)
+    mode.Activated:Connect(function() if armed or starting then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") end)
     info=lb(p9,"Три зелья выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
     itemRule.button=bt(p9,"АВТО-ЗЕЛЬЯ: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
     local function useTier(current,tier)
@@ -2053,7 +2070,7 @@ do
     end)
     g.Destroying:Connect(function() stop() connection:Disconnect() end)
     itemRule.button.Activated:Connect(function()
-        if armed then stop() info.Text="Авто-зелья остановлены." return end
+        if armed or starting then stop() info.Text="Авто-зелья остановлены." return end
         local interval=tonumber(itemRule.interval.Text)
         if itemRule.mode=="timer" then
             if not interval or interval<1 or interval>1440 then info.Text="Укажи интервал от 1 до 1440 минут." return end
@@ -2071,12 +2088,16 @@ do
             if not n or n<1 or n%1~=0 then info.Text="Укажи целое число круток." return end
             local remote=Rem:FindFirstChild("GetState")
             local ok,state=false,nil
+            generation+=1 local current=generation starting=true
+            info.Text="Получаю счётчик круток..."
             local beforeRequest=observedVersion
             if remote then ok,state=pcall(function() return remote:InvokeServer() end) end
+            if current~=generation or not g.Parent then return end
+            starting=false
             if not ok or type(state)~="table" or type(state.rollCount)~="number" then info.Text="Не удалось получить счётчик." return end
             if observedVersion~=beforeRequest and observedCount then state.rollCount=observedCount end
             if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." return end
-            generation+=1 target,lastCount=n,state.rollCount armed=true
+            target,lastCount=n,state.rollCount armed=true
             itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
             info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount.."."
         end
@@ -2406,6 +2427,11 @@ local function sendMail()
     if not g.Parent then return end
     plateNames,selectionError = checkMailPlates(platesArr)
     if not plateNames then mSt.Text=selectionError return end
+    if totalItems>0 then
+        local valid,reason=extra.validateMailItems(items)
+        if not g.Parent then return end
+        if not valid then mSt.Text=reason return end
+    end
     local ok,res=pcall(function() return PS:InvokeServer("send",uid,platesArr,items,amt) end)
     if not g.Parent then return end
     if not ok or type(res)~="table" or not res.ok then
@@ -2446,15 +2472,18 @@ mSendB.Activated:Connect(function()
     if not ok then mSt.Text = "Ошибка отправки. Проверь исходящие." end
 end)
 
+extra.takeSession=0
 mTakeB.MouseButton1Click:Connect(function()
     takeRun=not takeRun
+    extra.takeSession+=1
+    local session=extra.takeSession
     mTakeB.BackgroundColor3=takeRun and danger or cd
     mTakeB.Text=takeRun and "АВТО-ПРИЁМ: ВКЛ" or "АВТО-ПРИЁМ: ВЫКЛ"
     if not takeRun then mSt.Text="Авто-приём остановлен." return end
     mSt.Text="Авто-приём включен."
     task.spawn(function()
         local function scanBoxTable(tbl,visited)
-            if type(tbl)~="table" or visited[tbl] then return end
+            if not takeRun or session~=extra.takeSession or not g.Parent or type(tbl)~="table" or visited[tbl] then return end
             visited[tbl]=true
             local pid=rawget(tbl,"id")
             if type(pid)=="string" and pid:sub(1,5)=="post_" then
@@ -2462,9 +2491,11 @@ mTakeB.MouseButton1Click:Connect(function()
                     local okTake,takeRes=pcall(function() return PS:InvokeServer("take",{pid}) end)
                     if okTake and type(takeRes)=="table" and takeRes.ok then
                         takenPosts[pid]=true
-                        local infoLine,fullTip=formatBoxPost(tbl)
-                        mSt.Text="Принята новая посылка"
-                        addMailLog(infoLine,fullTip)
+                        if g.Parent then
+                            local infoLine,fullTip=formatBoxPost(tbl)
+                            mSt.Text="Принята новая посылка"
+                            addMailLog(infoLine,fullTip)
+                        end
                     end
                     task.wait(0.4)
                 end
@@ -2472,9 +2503,9 @@ mTakeB.MouseButton1Click:Connect(function()
             for _,v in pairs(tbl) do if type(v)=="table" then scanBoxTable(v,visited) end end
         end
 
-        while takeRun do
+        while takeRun and session==extra.takeSession and g.Parent do
             local okBox,boxRes=pcall(function() return PS:InvokeServer("box") end)
-            if okBox and type(boxRes)=="table" then scanBoxTable(boxRes,{}) end
+            if takeRun and session==extra.takeSession and g.Parent and okBox and type(boxRes)=="table" then scanBoxTable(boxRes,{}) end
             task.wait(math.max(2,tonumber(mailDelayBox.Text) or 4))
         end
     end)
@@ -2495,14 +2526,15 @@ local function getStallState()
     return false
 end
 
-local function buyAllStall()
+extra.stallSession=0
+local function buyAllStall(session)
     local bought=0
     for _,pid in ipairs(allPotions) do
         local level=tonumber(pid:match("_(%d+)$"))
-        if not stRun then break end
+        if not stRun or session~=extra.stallSession or not g.Parent then break end
         if level and stallLevels[level] then
             for _=1,10 do
-                if not stRun or not stallLevels[level] then break end
+                if not stRun or session~=extra.stallSession or not g.Parent or not stallLevels[level] then break end
                 local ok,res=pcall(function() return ST:InvokeServer("buy",pid) end)
                 if ok and type(res)=="table" and res.ok then
                     bought=bought+1
@@ -2518,13 +2550,14 @@ end
 local totalStallBought=0
 task.spawn(function()
     while g.Parent do
-        local hasStock=getStallState()
         if not stRun then
             stInfo.Text="Статус: ВЫКЛ"
         else
+            local session=extra.stallSession
+            local hasStock=getStallState()
             if hasStock then
                 stInfo.Text="Вижу товар в ларьке. Скупаю..."
-                local cnt=buyAllStall()
+                local cnt=buyAllStall(session)
                 totalStallBought=totalStallBought+cnt
             else
                 stInfo.Text=string.format("Статус: ВКЛ (Всё раскуплено)\nВсего куплено: %d шт.",totalStallBought)
@@ -2536,6 +2569,7 @@ end)
 
 stAutoB.MouseButton1Click:Connect(function()
     stRun=not stRun
+    extra.stallSession+=1
     stAutoB.BackgroundColor3=stRun and danger or ac
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
 end)
