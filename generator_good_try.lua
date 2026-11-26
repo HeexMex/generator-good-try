@@ -1950,8 +1950,10 @@ do
                 local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
                 if ok and type(response)=="table" and (response.StatusCode or response.Status)==401 and shared and shared.url==cfg.url then pairAccount(shared.url,shared.code) end
                 if panel.Visible then status.Text=ok and type(response)=="table" and (response.StatusCode or response.Status)==200 and "Статистика отправлена." or "Не удалось отправить статистику." end
+                if not ok or type(response)~="table" or (response.StatusCode or response.Status)~=200 then task.wait(10) else task.wait(60) end
+            else
+                task.wait(10)
             end
-            task.wait(60)
         end
     end)
 end
@@ -2612,6 +2614,7 @@ do
     end
     task.spawn(function()
         while g.Parent do
+            local resultReady=false
             if pendingResult then
                 local response=extra.mailRequest("POST","/api/mail/result",pendingResult)
                 if responseStatus(response)==200 then pendingResult=nil end
@@ -2624,10 +2627,11 @@ do
                     local callOk,status,err=pcall(executeBatch,batch)
                     if not callOk then status,err="unknown","Ошибка выполнения; проверь исходящие" end
                     pendingResult={batch_id=batch.id,status=status,error=tostring(err or ""):sub(1,300),session_id=extra.statsSession,sequence=extra.statsSequence}
+                    resultReady=true
                 end
                 sendInProgress=false
             end
-            task.wait(10)
+            task.wait(resultReady and 0.1 or 4)
         end
     end)
 end
