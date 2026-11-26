@@ -193,6 +193,7 @@ for idx,sr in ipairs(sorts) do
         curSort=sr sB.Text=sr.n
         for j,b in ipairs(sBtns) do b.BackgroundColor3=sorts[j].id==sr.id and ac or cd end
         sModal.Visible=false
+        if extra.persistRuntime then extra.persistRuntime() end
     end)
 end
 local sCloseB=bt(sModal,"Закрыть",u(1,-16,0,28),u(0,8,1,-34),c(200,55,65),6) sCloseB.ZIndex=9
@@ -215,7 +216,7 @@ for i,r in ipairs(rars) do
     r.box.FocusLost:Connect(function() local v=parseM(r.box.Text) if v>0 then r.box.Text=tostring(v) bl={} end end)
     local sw=bt(rw,"OFF",u(0,44,0,23),u(1,-50,0,5),bg,6,1)
     r.toggle=sw
-    sw.MouseButton1Click:Connect(function() r.on=not r.on sw.BackgroundColor3=r.on and ac or bg sw.Text=r.on and "ON" or "OFF" end)
+    sw.MouseButton1Click:Connect(function() r.on=not r.on sw.BackgroundColor3=r.on and ac or bg sw.Text=r.on and "ON" or "OFF" if extra.persistRuntime then extra.persistRuntime() end end)
 end
 
 local stC=ui("Frame",{Size=u(1,0,0,44),Position=u(0,0,0,192),BackgroundColor3=cd},p1,8,1)
@@ -260,6 +261,7 @@ do
             filter.enabled = not filter.enabled
             if type(savedConfig.traderFilters)~="table" then savedConfig.traderFilters={true,true,false} end
             savedConfig.traderFilters[index]=filter.enabled
+            if extra.persistRuntime then extra.persistRuntime() end
             toggle.Text = filter.enabled and "ON" or "OFF"
             toggle.BackgroundColor3 = filter.enabled and ac or bg
         end)
@@ -293,8 +295,12 @@ do
         local args=table.pack(...)
         return pcall(function() return remote:InvokeServer(table.unpack(args,1,args.n)) end)
     end
-    action.Activated:Connect(function()
-        running=not running
+    local function setTraderRunning(value)
+        value=value==true
+        if running==value then return end
+        running=value
+        extra.traderRunning=running
+        if extra.persistRuntime then extra.persistRuntime() end
         session=session+1
         local current=session
         action.Text=running and "АВТО-ТОРГАШ: ВКЛ" or "АВТО-ТОРГАШ: ВЫКЛ"
@@ -378,8 +384,10 @@ do
                 task.wait(waitTime)
             end
         end)
-    end)
-    balanceBox.FocusLost:Connect(function() savedConfig.traderReserve=parseM(balanceBox.Text) balanceBox.Text=tostring(savedConfig.traderReserve) end)
+    end
+    extra.setTraderRunning=setTraderRunning
+    action.Activated:Connect(function() setTraderRunning(not running) end)
+    balanceBox.FocusLost:Connect(function() savedConfig.traderReserve=parseM(balanceBox.Text) balanceBox.Text=tostring(savedConfig.traderReserve) if extra.persistRuntime then extra.persistRuntime() end end)
     g.Destroying:Connect(function() running=false session=session+1 end)
 end
 
@@ -495,6 +503,7 @@ do
         button.Activated:Connect(function()
             stallLevels[i]=not stallLevels[i]
             showLevel(i)
+            if extra.persistRuntime then extra.persistRuntime() end
         end)
     end
 end
@@ -532,11 +541,15 @@ do
     local row = ui("Frame", {Size=u(1,-5,0,36), Position=u(0,0,0,160), BackgroundColor3=cd}, extra.settingsRows, 8, 1)
     lb(row, "Автопродление номеров (раз в час)", u(0.81,0,1,0), u(0,10,0,0), sb)
     local toggle = bt(row, "OFF", u(0,46,0,24), u(1,-54,0,6), bg, 6, 1)
-    toggle.Activated:Connect(function()
-        upkeepEnabled = not upkeepEnabled
+    local function setUpkeep(value)
+        upkeepEnabled = value==true
+        extra.upkeepEnabled=upkeepEnabled
+        if extra.persistRuntime then extra.persistRuntime() end
         toggle.Text = upkeepEnabled and "ON" or "OFF"
         toggle.BackgroundColor3 = upkeepEnabled and ac or bg
-    end)
+    end
+    extra.setUpkeep=setUpkeep
+    toggle.Activated:Connect(function() setUpkeep(not upkeepEnabled) end)
 
     task.spawn(function()
         while g.Parent do
@@ -563,7 +576,13 @@ do
     local row=ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,200),BackgroundColor3=cd},extra.settingsRows,8,1)
     lb(row,"Автосбор заданий",u(0.75,0,1,0),u(0,10,0,0),sb)
     local toggle=bt(row,"OFF",u(0,46,0,24),u(1,-54,0,6),bg,6,1)
-    toggle.Activated:Connect(function() enabled=not enabled toggle.Text=enabled and "ON" or "OFF" toggle.BackgroundColor3=enabled and ac or bg end)
+    local function setClaimTasks(value)
+        enabled=value==true extra.claimTasksEnabled=enabled
+        if extra.persistRuntime then extra.persistRuntime() end
+        toggle.Text=enabled and "ON" or "OFF" toggle.BackgroundColor3=enabled and ac or bg
+    end
+    extra.setClaimTasks=setClaimTasks
+    toggle.Activated:Connect(function() setClaimTasks(not enabled) end)
     local changed=Rem:FindFirstChild("StateChanged")
     local connection=changed and changed.OnClientEvent:Connect(function(state) if type(state)=="table" then latest=state end end)
     task.spawn(function()
@@ -2136,13 +2155,14 @@ end)
 cB.MouseButton1Click:Connect(function() dlg.Visible=true end)
 nB.MouseButton1Click:Connect(function() dlg.Visible=false end)
 yB.MouseButton1Click:Connect(function()
+    if saveConfig and configReadable then pcall(saveConfig) end
     run,takeRun,stRun=false,false,false
     if appliedOpt then applyCustomOpt(nil) end
     g:Destroy()
 end)
 bindB.MouseButton1Click:Connect(function() extra.waitingAfkBind=false waitingBind=true bindB.Text="Нажми клавишу..." end)
 extra.afkBindB.MouseButton1Click:Connect(function() waitingBind=false extra.waitingAfkBind=true extra.afkBindB.Text="Нажми клавишу..." end)
-afkB.MouseButton1Click:Connect(function() afkOn=not afkOn afkB.BackgroundColor3=afkOn and ac or bg afkB.Text=afkOn and "ON" or "OFF" end)
+afkB.MouseButton1Click:Connect(function() afkOn=not afkOn afkB.BackgroundColor3=afkOn and ac or bg afkB.Text=afkOn and "ON" or "OFF" if extra.persistRuntime then extra.persistRuntime() end end)
 local idleConnection = plr.Idled:Connect(function() if afkOn and g.Parent then pcall(function() VU:CaptureController() VU:ClickButton2(Vector2.new()) end) end end)
 local hotkey = U.InputBegan:Connect(function(i,gp)
     if not g.Parent then return end
@@ -2184,8 +2204,10 @@ do
     local function stop()
         generation+=1 armed=false starting=false
         if itemRule.button then itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac end
+        if extra.persistRuntime then extra.persistRuntime() end
     end
     itemRule.stop=stop
+    itemRule.isEnabled=function() return armed or starting end
     function itemRule.setTiers(tiers)
         for i,button in ipairs(tierButtons) do
             itemRule.tiers[i]=type(tiers)=="table" and tiers[i]==true
@@ -2199,6 +2221,7 @@ do
             if armed or starting then stop() end
             itemRule.tiers[i]=not itemRule.tiers[i]
             b.BackgroundColor3=itemRule.tiers[i] and ac or cd
+            if extra.persistRuntime then extra.persistRuntime() end
         end)
     end
     itemRule.setTiers({true,false,false})
@@ -2211,25 +2234,29 @@ do
         itemRule.mode=value=="rolls" and "rolls" or "timer"
         mode.Text=itemRule.mode=="timer" and "РЕЖИМ: ТАЙМЕР" or "РЕЖИМ: ПО КРУТКАМ"
     end
-    mode.Activated:Connect(function() if armed or starting then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") end)
+    mode.Activated:Connect(function() if armed or starting then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") if extra.persistRuntime then extra.persistRuntime() end end)
     info=lb(p9,"По три зелья каждого выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
     itemRule.button=bt(p9,"АВТО-ЗЕЛЬЯ: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
     local function useTiers(current,tiers)
         local inventory=Rem:FindFirstChild("Inventory")
         if not inventory then info.Text="Ошибка: Inventory не найден." return end
         local successes,attempts=0,0
+        local lastFailure=nil
         for tier=1,3 do
             if tiers[tier] then
                 for _,kind in ipairs({"luck","speed","money"}) do
                     if current~=generation or not g.Parent then return end
                     attempts+=1
                     local ok,result=pcall(function() return inventory:InvokeServer("use","potion_"..kind.."_"..tier) end)
-                    if ok and type(result)=="number" and result>0 then successes+=1 end
+                    if ok and type(result)=="number" and result>0 then successes+=1
+                    elseif ok and type(result)=="string" then lastFailure=result
+                    elseif not ok then lastFailure="нет ответа игры"
+                    else lastFailure="нет предмета или игра отклонила использование" end
                     task.wait(0.5)
                 end
             end
         end
-        if current==generation then info.Text="Использовано зелий: "..successes.." из "..attempts.."." end
+        if current==generation then info.Text="Использовано зелий: "..successes.." из "..attempts.."."..(lastFailure and " "..lastFailure or "") end
     end
     local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
         if type(state)~="table" or type(state.rollCount)~="number" then return end
@@ -2239,19 +2266,22 @@ do
         if lastCount and lastCount<target and count>=target then
             local current,tiers=generation,table.clone(itemRule.tiers)
             armed=false itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВЫКЛ" itemRule.button.BackgroundColor3=ac
+            if extra.persistRuntime then extra.persistRuntime() end
             task.spawn(useTiers,current,tiers)
         end
         lastCount=count
     end)
     g.Destroying:Connect(function() stop() connection:Disconnect() end)
-    itemRule.button.Activated:Connect(function()
-        if armed or starting then stop() info.Text="Авто-зелья остановлены." return end
+    function itemRule.setEnabled(value)
+        if not value then if armed or starting then stop() info.Text="Авто-зелья остановлены." end return end
+        if armed or starting then return end
         if not (itemRule.tiers[1] or itemRule.tiers[2] or itemRule.tiers[3]) then info.Text="Выбери хотя бы один тир." return end
         local interval=tonumber(itemRule.interval.Text)
         if itemRule.mode=="timer" then
             if not interval or interval<1 or interval>1440 then info.Text="Укажи интервал от 1 до 1440 минут." return end
             generation+=1 local current=generation
             armed=true itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
+            if extra.persistRuntime then extra.persistRuntime() end
             task.spawn(function()
                 while armed and current==generation and g.Parent do
                     useTiers(current,itemRule.tiers)
@@ -2276,8 +2306,10 @@ do
             target,lastCount=n,state.rollCount armed=true
             itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
             info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount.."."
+            if extra.persistRuntime then extra.persistRuntime() end
         end
-    end)
+    end
+    itemRule.button.Activated:Connect(function() itemRule.setEnabled(not (armed or starting)) end)
 end
 
 do
@@ -2346,6 +2378,7 @@ do
                 traderReserve=configNumber(savedConfig.traderReserve,0,0,1e15),
                 potionTiers=table.clone(itemRule.tiers), potionMode=itemRule.mode, potionInterval=itemRule.interval.Text, itemThreshold=itemRule.threshold.Text,
                 afkOn=afkOn,
+                runtime=extra.getRuntime and extra.getRuntime() or savedConfig.runtime,
                 mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
                 stallLevels=table.clone(stallLevels),
                 market={
@@ -2368,6 +2401,15 @@ do
         local saved=pcall(function() writefile(configPath,encoded) end)
         if saved then lastSavedData=encoded end
         return saved
+    end
+    local runtimeSaveQueued=false
+    extra.persistRuntime=function()
+        if extra.configApplying or runtimeSaveQueued then return end
+        runtimeSaveQueued=true
+        task.delay(0.2,function()
+            runtimeSaveQueued=false
+            if g.Parent and configReadable and not extra.configApplying then saveConfig() end
+        end)
     end
 
     local configOverlay=ui("Frame",{
@@ -2411,6 +2453,7 @@ do
             status.Text="Не удалось прочитать сохранённый конфиг."
             return false
         end
+        extra.configApplying=true
         savedConfig=config
         configReadable=true
         setTheme(config.modern==true)
@@ -2432,6 +2475,8 @@ do
         end
         fpsBox.Text=tostring(optCfg.fps)
         applyCustomOpt(table.clone(optCfg))
+        if extra.applyRuntime then extra.applyRuntime(config.runtime) end
+        extra.configApplying=false
         status.Text="Конфиг загружен и применён."
         return true
     end
@@ -2742,8 +2787,11 @@ do
 end
 
 extra.takeSession=0
-mTakeB.MouseButton1Click:Connect(function()
-    takeRun=not takeRun
+function extra.setTakeRunning(value)
+    value=value==true
+    if takeRun==value then return end
+    takeRun=value
+    if extra.persistRuntime then extra.persistRuntime() end
     extra.takeSession+=1
     local session=extra.takeSession
     mTakeB.BackgroundColor3=takeRun and danger or cd
@@ -2778,7 +2826,8 @@ mTakeB.MouseButton1Click:Connect(function()
             task.wait(math.max(2,tonumber(mailDelayBox.Text) or 4))
         end
     end)
-end)
+end
+mTakeB.MouseButton1Click:Connect(function() extra.setTakeRunning(not takeRun) end)
 local allPotions={
     "potion_luck_1","potion_speed_1","potion_money_1",
     "potion_luck_2","potion_speed_2","potion_money_2",
@@ -2787,28 +2836,32 @@ local allPotions={
 }
 
 local function getStallState()
-    local sp=plr.PlayerGui:FindFirstChild("PlatesUI") and plr.PlayerGui.PlatesUI:FindFirstChild("StallPanel")
-    if not sp then return false end
-    for _,v in ipairs(sp:GetDescendants()) do
-        if v:IsA("TextButton") and v.Text:find("₽") then return true end
+    local ok,result=pcall(function() return ST:InvokeServer("get") end)
+    if not ok or type(result)~="table" or type(result.data)~="table" or type(result.data.left)~="table" then
+        return nil,type(result)=="table" and tostring(result.err or result.why or "нет данных") or "нет ответа ларька"
     end
-    return false
+    return result.data
 end
 
 extra.stallSession=0
-local function buyAllStall(session)
+local function buyAllStall(session,stock)
     local bought=0
     for _,pid in ipairs(allPotions) do
         local level=tonumber(pid:match("_(%d+)$"))
         if not stRun or session~=extra.stallSession or not g.Parent then break end
         if level and stallLevels[level] then
-            for _=1,10 do
+            local left=math.clamp(math.floor(tonumber(stock.left[pid]) or 0),0,10)
+            for _=1,left do
                 if not stRun or session~=extra.stallSession or not g.Parent or not stallLevels[level] then break end
                 local ok,res=pcall(function() return ST:InvokeServer("buy",pid) end)
                 if ok and type(res)=="table" and res.ok then
                     bought=bought+1
                     stInfo.Text="Покупка ассортимента...\nКуплено за заход: "..bought.." шт."
                     task.wait(0.18)
+                elseif not ok or type(res)~="table" then return bought,"Нет ответа при покупке; проверю остатки позже."
+                elseif res.why=="money" then return bought,"Недостаточно денег."
+                elseif res.why=="far" then return bought,"Ларёк недоступен из этой точки."
+                elseif res.why~="empty" then return bought,"Покупка отклонена: "..tostring(res.err or res.why or "неизвестно")
                 else break end
             end
         end
@@ -2819,31 +2872,42 @@ end
 local totalStallBought=0
 task.spawn(function()
     while g.Parent do
+        local stallWait=math.max(2,tonumber(stallDelayBox.Text) or 2)
         if not stRun then
             stInfo.Text="Статус: ВЫКЛ"
         else
             local session=extra.stallSession
-            local hasStock=getStallState()
-            if hasStock then
-                stInfo.Text="Вижу товар в ларьке. Скупаю..."
-                local cnt=buyAllStall(session)
+            local stock,reason=getStallState()
+            if not stRun or session~=extra.stallSession or not g.Parent then continue end
+            if stock then
+                stInfo.Text="Проверяю остатки ларька..."
+                local cnt,problem=buyAllStall(session,stock)
                 totalStallBought=totalStallBought+cnt
+                if problem then stallWait=math.max(stallWait,15) end
+                if stRun and session==extra.stallSession then
+                    stInfo.Text=(problem or (cnt>0 and "Выбранные зелья куплены." or "Выбранных зелий нет в наличии.")).."\nВсего куплено: "..totalStallBought.." шт."
+                end
             else
-                stInfo.Text=string.format("Статус: ВКЛ (Всё раскуплено)\nВсего куплено: %d шт.",totalStallBought)
+                stInfo.Text="Не удалось получить остатки: "..tostring(reason).."\nВсего куплено: "..totalStallBought.." шт."
+                stallWait=math.max(stallWait,10)
             end
         end
-        task.wait(math.max(1,tonumber(stallDelayBox.Text) or 2))
+        task.wait(stallWait)
     end
 end)
 
-stAutoB.MouseButton1Click:Connect(function()
-    stRun=not stRun
+function extra.setStallRunning(value)
+    value=value==true
+    if stRun==value then return end
+    stRun=value
     extra.stallSession+=1
     stAutoB.BackgroundColor3=stRun and danger or ac
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
-end)
+    if extra.persistRuntime then extra.persistRuntime() end
+end
+stAutoB.MouseButton1Click:Connect(function() extra.setStallRunning(not stRun) end)
 
-local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC if extra.reportGameError and msg:find("Ошибка",1,true) then extra.reportGameError("Снайпер",msg) end end
+local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC if extra.persistRuntime then extra.persistRuntime() end if extra.reportGameError and msg:find("Ошибка",1,true) then extra.reportGameError("Снайпер",msg) end end
 local function wN() local gp=math.max(1.4,tonumber(dBox.Text) or 1.5) local df=os.clock()-lN if df<gp then task.wait(gp-df) end lN=os.clock() end
 local function getP(t) if type(t)~="table" then return 0 end local d=t.lot or t return tonumber(d.p) or tonumber(d.ask) or tonumber(d.start) or tonumber(d.price) or 0 end
 local function freshP(id,session) wN() if not run or session~=sniperSession then return 0 end local ok,inf=pcall(function() return ML:InvokeServer(id) end) return ok and getP(inf) or 0 end
@@ -2916,10 +2980,43 @@ local function step(session)
     end
 end
 
-tB.MouseButton1Click:Connect(function()
-    run=not run
+function extra.setSniperRunning(value)
+    value=value==true
+    if run==value then return end
+    run=value
     sniperSession=sniperSession+1
     local session=sniperSession
+    if extra.persistRuntime then extra.persistRuntime() end
     if run then tB.BackgroundColor3,tB.Text=danger,"СТОП" bl,okC={},0 task.spawn(function() while run and sniperSession==session do step(session) end end)
     else stop("Остановлено") end
+end
+tB.MouseButton1Click:Connect(function() extra.setSniperRunning(not run) end)
+
+extra.getRuntime=function()
+    return {sniper=run,mailTake=takeRun,stall=stRun,trader=extra.traderRunning==true,
+        upkeep=extra.upkeepEnabled==true,claimTasks=extra.claimTasksEnabled==true,potions=itemRule.isEnabled()}
+end
+extra.applyRuntime=function(runtime)
+    if type(runtime)~="table" then return end
+    if type(runtime.trader)=="boolean" then extra.setTraderRunning(runtime.trader) end
+    if type(runtime.upkeep)=="boolean" then extra.setUpkeep(runtime.upkeep) end
+    if type(runtime.claimTasks)=="boolean" then extra.setClaimTasks(runtime.claimTasks) end
+    if type(runtime.mailTake)=="boolean" then extra.setTakeRunning(runtime.mailTake) end
+    if type(runtime.stall)=="boolean" then extra.setStallRunning(runtime.stall) end
+    if type(runtime.sniper)=="boolean" then extra.setSniperRunning(runtime.sniper) end
+    if type(runtime.potions)=="boolean" then task.spawn(function() if g.Parent then itemRule.setEnabled(runtime.potions) end end) end
+end
+(function()
+    for _,field in ipairs({lBox,dBox,mailDelayBox,stallDelayBox,itemRule.interval,itemRule.threshold,sumBox}) do
+        field.FocusLost:Connect(function() if extra.persistRuntime then extra.persistRuntime() end end)
+    end
+    for _,rarity in ipairs(rars) do
+        rarity.box.FocusLost:Connect(function() if extra.persistRuntime then extra.persistRuntime() end end)
+    end
+end)()
+task.defer(function()
+    if not g.Parent then return end
+    extra.configApplying=true
+    extra.applyRuntime(savedConfig.runtime)
+    extra.configApplying=false
 end)
