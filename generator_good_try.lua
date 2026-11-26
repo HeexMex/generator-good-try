@@ -2051,7 +2051,7 @@ do
                     local candidates={}
                     for _,plate in ipairs(plates) do
                         if #candidates>=3000 then break end
-                        candidates[#candidates+1]={id=plate.id,rarity=plate.label:match("%[([^%]]+)%]$") or "UNKNOWN"}
+                        candidates[#candidates+1]={id=plate.id,rarity=plate.label:match("%[([^%]]+)%]$") or "UNKNOWN",text=plate.label:match("^(.-) %[[^%]]+%]$")}
                     end
                     data.mail_plates=candidates data.mail_truncated=#plates>3000 data.garage_counts=counts
                 end
