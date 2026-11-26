@@ -356,11 +356,12 @@ do
                                             handled[index]=true
                                             local buyOk,result=invoke(trader,"buy",index)
                                             if not running or session~=current then return end
-                                            if buyOk and type(result)=="table" and result.ok then
+                            if buyOk and type(result)=="table" and result.ok then
                                                 remaining=money-price
                                                 hint.Text="Куплено: "..tostring(good.id)
                                             else
                                                 hint.Text="Покупка не подтверждена: "..tostring(type(result)=="table" and (result.why or result.err) or "ошибка")
+                                                if extra.reportGameError then extra.reportGameError("Торгаш",hint.Text) end
                                             end
                                             task.wait(0.25)
                                         end
@@ -578,7 +579,10 @@ do
                     for _,entry in ipairs(tasks.list) do
                         if not enabled or not g.Parent then break end
                         if type(entry)=="table" and type(entry.id)=="string" and type(entry.need)=="number" and (tonumber(tasks.progress[entry.id]) or 0)>=entry.need and not tasks.claimed[entry.id] then
-                            pcall(function() return claim:InvokeServer(entry.id) end)
+                            local claimOk,result=pcall(function() return claim:InvokeServer(entry.id) end)
+                            if extra.reportGameError and (not claimOk or type(result)~="table" or not result.ok) then
+                                extra.reportGameError("Задания",type(result)=="table" and tostring(result.err or "Ошибка получения награды") or "Нет ответа при получении награды")
+                            end
                             task.wait(0.5)
                         end
                     end
@@ -719,6 +723,7 @@ extra.mailInventoryCache=nil
 local function scanMyPlates(sortByLabel)
     local pref,bestMap,bestCnt=tostring(plr.UserId).."_",{},0
     local mounted,hasMountState = {},false
+    local currentInventory,currentState=nil,nil
     local function markEquipped(state,inventory)
         local function mark(index)
             if type(index)=="number" and index>0 then local id=plateId(rawget(inventory,index)) if type(id)=="string" then mounted[id]=true end end
@@ -743,6 +748,7 @@ local function scanMyPlates(sortByLabel)
                 local mountedId=plateId(rawget(extra.mailInventoryCache,index))
                 if index==0 or type(mountedId)=="string" then
                     hasMountState=true
+                    currentInventory,currentState=extra.mailInventoryCache,state
                     markEquipped(state,extra.mailInventoryCache)
                     for _,item in ipairs(extra.mailInventoryCache) do
                         local idV,txtV=plateId(item),type(item)=="table" and rawget(item,"text")
@@ -780,7 +786,7 @@ local function scanMyPlates(sortByLabel)
                         end
                     end
                 end
-                if valid>=bestCnt and valid>0 then bestCnt,bestMap=valid,tmp end
+                if valid>=bestCnt and valid>0 then bestCnt,bestMap=valid,tmp currentInventory,currentState=inventory,obj end
             end
         end
     end
@@ -791,7 +797,20 @@ local function scanMyPlates(sortByLabel)
         end
     end
     if sortByLabel then table.sort(list,function(a,b) return a.label<b.label end) end
-    return list,hasMountState
+    local garageCounts=nil
+    if type(currentInventory)=="table" and type(currentState)=="table" and type(currentState.car)=="number" and type(currentState.wall)=="table" then
+        garageCounts={}
+        local hidden={}
+        if currentState.car>0 then hidden[currentState.car]=true end
+        for _,index in ipairs(currentState.wall) do if type(index)=="number" and index>0 then hidden[index]=true end end
+        for index,item in ipairs(currentInventory) do
+            if not hidden[index] and type(item)=="table" and not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") then
+                local rarity=tostring(rawget(item,"rarity") or "UNKNOWN")
+                garageCounts[rarity]=(garageCounts[rarity] or 0)+1
+            end
+        end
+    end
+    return list,hasMountState,garageCounts
 end
 
 local pickerItems,pickerRows = {},{}
@@ -1797,6 +1816,36 @@ do
     local function validUrl(url)
         return type(url)=="string" and #url<=200 and url:match("^https://[%w%.%-]+:?%d*$")~=nil
     end
+    extra.mailRequest=function(method,path,body)
+        if not cfg.enabled or type(requestFn)~="function" or cfg.token=="" or not validUrl(cfg.url) then return nil end
+        local headers={Authorization="Bearer "..cfg.token}
+        local options={Url=cfg.url..path,Method=method,Headers=headers}
+        if body then
+            local encodedOk,encoded=pcall(function() return Http:JSONEncode(body) end)
+            if not encodedOk then return nil end
+            headers["Content-Type"]="application/json" options.Body=encoded
+        end
+        local ok,response=pcall(function() return requestFn(options) end)
+        if not ok or type(response)~="table" then return nil end
+        return response
+    end
+    do
+        local recent={}
+        extra.reportGameError=function(source,message)
+            if type(message)~="string" or message=="" or not cfg.enabled then return end
+            local key=tostring(source).."\0"..message
+            local now=os.clock()
+            if recent[key] and now-recent[key]<120 then return end
+            recent[key]=now
+            for k,t in pairs(recent) do if now-t>600 then recent[k]=nil end end
+            task.spawn(function() extra.mailRequest("POST","/api/events/error",{source=tostring(source):sub(1,32),message=message:sub(1,300)}) end)
+        end
+        local toast=Rem:FindFirstChild("Toast")
+        local connection=toast and toast:IsA("RemoteEvent") and toast.OnClientEvent:Connect(function(message,kind)
+            if kind=="err" or kind=="error" then extra.reportGameError("Игра",message) end
+        end)
+        g.Destroying:Connect(function() if connection then connection:Disconnect() end end)
+    end
     if not validUrl(cfg.url) then cfg.enabled=false cfg.token="" cfg.url="https://hub-popcontrol.ru" end
     local shared=nil
     if type(readfile)=="function" then
@@ -1874,6 +1923,7 @@ do
     g.Destroying:Connect(function() if stateConnection then stateConnection:Disconnect() end end)
     local session=Http:GenerateGUID(false)
     local seq=0
+    extra.statsSession=session extra.statsSequence=0
     if cfg.token=="" and shared then pairAccount(shared.url,shared.code) end
     task.spawn(function()
         local getState=Rem:FindFirstChild("GetState")
@@ -1886,7 +1936,17 @@ do
         while g.Parent do
             if cfg.enabled and type(requestFn)=="function" and validUrl(cfg.url) and cfg.token~="" then
                 seq=seq+1
+                extra.statsSequence=seq
                 local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
+                local scanOk,plates,verified,counts=pcall(scanMyPlates)
+                if scanOk and verified then
+                    local candidates={}
+                    for _,plate in ipairs(plates) do
+                        if #candidates>=3000 then break end
+                        candidates[#candidates+1]={id=plate.id,rarity=plate.label:match("%[([^%]]+)%]$") or "UNKNOWN"}
+                    end
+                    data.mail_plates=candidates data.mail_truncated=#plates>3000 data.garage_counts=counts
+                end
                 local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
                 if ok and type(response)=="table" and (response.StatusCode or response.Status)==401 and shared and shared.url==cfg.url then pairAccount(shared.url,shared.code) end
                 if panel.Visible then status.Text=ok and type(response)=="table" and (response.StatusCode or response.Status)==200 and "Статистика отправлена." or "Не удалось отправить статистику." end
@@ -2463,10 +2523,12 @@ local function sendMail()
         if not g.Parent then return end
         if not valid then mSt.Text=reason return end
     end
+    extra.lastMailSent=os.clock()
     local ok,res=pcall(function() return PS:InvokeServer("send",uid,platesArr,items,amt) end)
     if not g.Parent then return end
     if not ok or type(res)~="table" or not res.ok then
         mSt.Text = ok and type(res)=="table" and res.err and ("Отказ: "..tostring(res.err)) or "Отправка не подтверждена. Проверь исходящие."
+        if extra.reportGameError then extra.reportGameError("Почта",mSt.Text) end
         return
     end
 
@@ -2502,6 +2564,73 @@ mSendB.Activated:Connect(function()
     mSendB.Text = "ОТПРАВИТЬ"
     if not ok then mSt.Text = "Ошибка отправки. Проверь исходящие." end
 end)
+
+do
+    local pendingResult=nil
+    local function responseStatus(response)
+        return type(response)=="table" and (response.StatusCode or response.Status)
+    end
+    local function executeBatch(batch)
+        if type(batch)~="table" or type(batch.id)~="string" or type(batch.recipient)~="string"
+            or configNickname(batch.recipient)=="" or type(batch.plates)~="table" or #batch.plates<1 or #batch.plates>30 then
+            return "failed","Некорректное задание"
+        end
+        local ok,plates,verified=pcall(scanMyPlates)
+        if not ok or not verified then return "failed","Не удалось проверить инвентарь" end
+        local available={}
+        for _,plate in ipairs(plates) do available[plate.id]=true end
+        local chosen,seen={},{}
+        for _,uid in ipairs(batch.plates) do
+            if type(uid)~="string" or not available[uid] or seen[uid] then return "failed","Номера изменились; требуется новая проверка" end
+            seen[uid]=true chosen[#chosen+1]=uid
+        end
+        if not g.Parent then return "failed","Клиент закрыт до отправки" end
+        local lookupOk,look=pcall(function() return PS:InvokeServer("look",batch.recipient) end)
+        if not lookupOk or type(look)~="table" or not look.ok or not tonumber(look.toId) then
+            return "failed",type(look)=="table" and tostring(look.err or "Получатель не найден") or "Не удалось найти получателя"
+        end
+        if not g.Parent then return "failed","Клиент закрыт до отправки" end
+        local scanOk,fresh,stillVerified=pcall(scanMyPlates)
+        if not scanOk or not stillVerified then return "failed","Не удалось повторно проверить инвентарь" end
+        local stillAvailable={}
+        for _,plate in ipairs(fresh) do stillAvailable[plate.id]=true end
+        for _,uid in ipairs(chosen) do if not stillAvailable[uid] then return "failed","Номера изменились перед отправкой" end end
+        if not g.Parent then return "failed","Клиент закрыт до отправки" end
+        local permission=extra.mailRequest("POST","/api/mail/begin",{batch_id=batch.id})
+        if responseStatus(permission)~=200 then
+            if responseStatus(permission)==409 then return "failed","Задание отменено до отправки" end
+            return "unknown","Связь прервалась до подтверждения отправки"
+        end
+        if not g.Parent then return "failed","Клиент закрыт до отправки" end
+        extra.lastMailSent=os.clock()
+        local sent,result=pcall(function() return PS:InvokeServer("send",tonumber(look.toId),chosen,{},0) end)
+        if not sent or type(result)~="table" then return "unknown","Нет подтверждения; проверь исходящие" end
+        if not result.ok then return "failed",tostring(result.err or "Игра отклонила отправку") end
+        for _,uid in ipairs(chosen) do sentPlates[uid]=true selPlates[uid]=nil end
+        updPickTxt()
+        return "sent",""
+    end
+    task.spawn(function()
+        while g.Parent do
+            if pendingResult then
+                local response=extra.mailRequest("POST","/api/mail/result",pendingResult)
+                if responseStatus(response)==200 then pendingResult=nil end
+            elseif not sendInProgress and (not extra.lastMailSent or os.clock()-extra.lastMailSent>=6) then
+                sendInProgress=true
+                local response=extra.mailRequest("GET","/api/mail/next")
+                local ok,parsed=pcall(function() return Http:JSONDecode(response.Body) end)
+                local batch=ok and type(parsed)=="table" and parsed.batch
+                if responseStatus(response)==200 and type(batch)=="table" then
+                    local callOk,status,err=pcall(executeBatch,batch)
+                    if not callOk then status,err="unknown","Ошибка выполнения; проверь исходящие" end
+                    pendingResult={batch_id=batch.id,status=status,error=tostring(err or ""):sub(1,300),session_id=extra.statsSession,sequence=extra.statsSequence}
+                end
+                sendInProgress=false
+            end
+            task.wait(10)
+        end
+    end)
+end
 
 extra.takeSession=0
 mTakeB.MouseButton1Click:Connect(function()
@@ -2605,7 +2734,7 @@ stAutoB.MouseButton1Click:Connect(function()
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
 end)
 
-local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC end
+local function stop(msg) run=false tB.BackgroundColor3,tB.Text=ac,"СНАЙПЕР: ВЫКЛ" st.Text=msg.."\nУспешных покупок: "..okC if extra.reportGameError and msg:find("Ошибка",1,true) then extra.reportGameError("Снайпер",msg) end end
 local function wN() local gp=math.max(1.4,tonumber(dBox.Text) or 1.5) local df=os.clock()-lN if df<gp then task.wait(gp-df) end lN=os.clock() end
 local function getP(t) if type(t)~="table" then return 0 end local d=t.lot or t return tonumber(d.p) or tonumber(d.ask) or tonumber(d.start) or tonumber(d.price) or 0 end
 local function freshP(id,session) wN() if not run or session~=sniperSession then return 0 end local ok,inf=pcall(function() return ML:InvokeServer(id) end) return ok and getP(inf) or 0 end
