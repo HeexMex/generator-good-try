@@ -1352,7 +1352,7 @@ do
 end
 mB.MouseButton1Click:Connect(function() tog(false) end)
 
-local afkPurchases = {count=0, spent=0, byRarity={}, last="—"}
+local afkPurchases = {count=0, spent=0, byRarity={}, last="—", history={}}
 local afkRolls = (function()
     local afkRolls = {available=false, count=0, caught=0, byRarity={}, last="—", lastPrice="—"}
     local rarityByText = {
@@ -1670,13 +1670,84 @@ local exitAfkMode = (function()
         local last = metric(lastBox,lastCaption,extraCaption and 4 or 14,"—")
         local extra,extraLabel
         if extraCaption then extra,extraLabel = metric(lastBox,extraCaption,24,"—",green) end
-        return first,second,counts,last,extra,extraLabel
+        return first,second,counts,last,extra,extraLabel,lastBox
     end
 
-    local bought,spent,counts,last = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
+    local bought,spent,counts,last,_,_,lastPurchaseBox = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
     local rolled,caught,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Улов (редкие+)","Выпавший","Стоимость")
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
+
+    -- Keep the complete session history in memory but render only visible rows.
+    local historyBox = ui("Frame",{Size=u(0,228,0,180),Position=u(0,20,0,77),BackgroundColor3=sd,
+        BorderSizePixel=0,Visible=false,Active=true,ZIndex=40},card,8,1)
+    local historyTitle = text(historyBox,"Покупки за сеанс",u(1,-33,0,22),u(0,9,0,3),ac)
+    historyTitle.ZIndex=41
+    local historyClose = bt(historyBox,"×",u(0,22,0,22),u(1,-25,0,3),cd,5)
+    historyClose.ZIndex=42
+    local historyList = ui("ScrollingFrame",{Size=u(1,-12,1,-32),Position=u(0,6,0,27),
+        BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=41},historyBox)
+    local historyEmpty = text(historyList,"За этот сеанс покупок пока нет",u(1,-8,0,35),u(0,4,0,4),sb,Enum.TextXAlignment.Center)
+    historyEmpty.ZIndex=42 historyEmpty.TextWrapped=true
+    local rowHeight, rows = 36, {}
+    for i=1,7 do
+        local row=ui("Frame",{Size=u(1,-6,0,34),BackgroundColor3=cd,BorderSizePixel=0,Visible=false,ZIndex=42},historyList,5)
+        local number=text(row,"",u(1,-12,0,16),u(0,6,0,1),tx)
+        number.TextTruncate=Enum.TextTruncate.AtEnd number.ZIndex=43
+        local detail=text(row,"",u(1,-12,0,14),u(0,6,0,18),sb)
+        detail.TextTruncate=Enum.TextTruncate.AtEnd detail.TextSize=10 detail.ZIndex=43
+        rows[i]={frame=row,number=number,detail=detail}
+    end
+    local shownCount=-1
+    local function refreshPurchaseHistory()
+        local entries=afkPurchases.history
+        local count=#entries
+        shownCount=count
+        historyTitle.Text="Покупки за сеанс: "..count
+        historyEmpty.Visible=count==0
+        historyList.CanvasSize=u(0,0,0,count*rowHeight)
+        local first=math.floor(historyList.CanvasPosition.Y/rowHeight)
+        for i,row in ipairs(rows) do
+            local offset=first+i-1
+            local item=entries[count-offset]
+            row.frame.Visible=item~=nil
+            if item then
+                row.frame.Position=u(0,0,0,offset*rowHeight)
+                row.number.Text=item.number
+                local style=rarMap[item.rarity]
+                row.detail.Text=item.time.." · "..(style and style.n or item.rarity).." · "..fmtNum(item.price).." ₽"
+                row.detail.TextColor3=style and style.col or sb
+            end
+        end
+    end
+    local overPurchase,overHistory,pinned=false,false,false
+    local function closePurchaseHistory()
+        historyBox.Visible=false
+        overPurchase,overHistory,pinned=false,false,false
+    end
+    local function scheduleHistoryClose()
+        task.delay(0.2,function()
+            if not pinned and not overPurchase and not overHistory then historyBox.Visible=false end
+        end)
+    end
+    lastPurchaseBox.Active=true
+    lastPurchaseBox.MouseEnter:Connect(function()
+        overPurchase=true
+        historyBox.Visible=true
+        refreshPurchaseHistory()
+    end)
+    lastPurchaseBox.MouseLeave:Connect(function() overPurchase=false scheduleHistoryClose() end)
+    lastPurchaseBox.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then
+            if pinned then closePurchaseHistory() else pinned=true historyBox.Visible=true refreshPurchaseHistory() end
+        end
+    end)
+    historyBox.MouseEnter:Connect(function() overHistory=true end)
+    historyBox.MouseLeave:Connect(function() overHistory=false scheduleHistoryClose() end)
+    historyList:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+        if historyBox.Visible then refreshPurchaseHistory() end
+    end)
+    historyClose.Activated:Connect(closePurchaseHistory)
 
     local function readBalanceLabel(label)
         if not label or not (label:IsA("TextLabel") or label:IsA("TextButton")) then return end
@@ -1756,6 +1827,7 @@ local exitAfkMode = (function()
         spent.Text = fmtNum(afkPurchases.spent).." ₽"
         for id,label in pairs(counts) do label.Text = "×"..(afkPurchases.byRarity[id] or 0) end
         last.Text = afkPurchases.last
+        if historyBox.Visible and shownCount~=#afkPurchases.history then refreshPurchaseHistory() end
         if afkRolls.available then
             rolled.Text = tostring(afkRolls.count)
             caught.Text = tostring(afkRolls.caught)
@@ -1768,6 +1840,7 @@ local exitAfkMode = (function()
 
     local function exitAfkMode()
         if not overlay.Visible then return false end
+        closePurchaseHistory()
         overlay.Visible = false
         g.DisplayOrder = previousOrder
         applyCustomOpt(previousOpt)
@@ -2765,6 +2838,8 @@ local function hold(lot,maxP,lim,session)
                 afkPurchases.spent += act
                 afkPurchases.byRarity[rarity] = (afkPurchases.byRarity[rarity] or 0) + 1
                 afkPurchases.last = tostring(lot.text).." ("..fmtNum(act).." ₽)"
+                local timeOk,timeText=pcall(os.date,"%H:%M:%S")
+                table.insert(afkPurchases.history,{number=tostring(lot.text),rarity=rarity,price=act,time=timeOk and timeText or "—"})
                 okC=okC+1
                 bl[lot.id]=true
                 st.Text="Куплен ["..rarity.."]: "..tostring(lot.text).." ("..act.." ₽)\nУспешных: "..okC
