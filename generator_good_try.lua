@@ -43,63 +43,6 @@ if C:FindFirstChild("ZS") then C.ZS:Destroy() end
 
 local g=Instance.new("ScreenGui",C) g.Name,g.ResetOnSpawn,g.IgnoreGuiInset="ZS",false,true
 
--- Нажимаем только Reconnect в системном окне ошибки Roblox.
-do
-    local running=true
-    local nextAttempt=0
-    local inputOk,input=pcall(function() return game:GetService("VirtualInputManager") end)
-    if not inputOk or not input then
-        warn("[GGT] Автореконнект недоступен: executor не предоставляет VirtualInputManager")
-    else
-        local function visibleInPrompt(button,prompt)
-            local node=button
-            while node do
-                if node:IsA("GuiObject") and not node.Visible then return false end
-                if node:IsA("ScreenGui") and not node.Enabled then return false end
-                if node==prompt then return true end
-                node=node.Parent
-            end
-            return false
-        end
-        local function isReconnect(button)
-            if not button:IsA("GuiButton") then return false end
-            local label=button:IsA("TextButton") and button or button:FindFirstChild("ButtonText",true)
-            if not label or not (label:IsA("TextLabel") or label:IsA("TextButton")) then return false end
-            local text=label.Text:match("^%s*(.-)%s*$")
-            return text=="Reconnect" or text=="Переподключиться"
-        end
-        local function tryReconnect()
-            local promptGui=C:FindFirstChild("RobloxPromptGui")
-            local overlay=promptGui and promptGui:FindFirstChild("promptOverlay")
-            local prompt=overlay and overlay:FindFirstChild("ErrorPrompt")
-            if not prompt or not promptGui.Enabled or not visibleInPrompt(prompt,overlay) then return end
-            for _,button in ipairs(prompt:GetDescendants()) do
-                if isReconnect(button) and visibleInPrompt(button,prompt) then
-                    local size,pos=button.AbsoluteSize,button.AbsolutePosition
-                    if size.X<=0 or size.Y<=0 then return end
-                    local x,y=pos.X+size.X/2,pos.Y+size.Y/2
-                    nextAttempt=os.clock()+15
-                    local ok,err=pcall(function()
-                        input:SendMouseButtonEvent(x,y,0,true,game,0)
-                        input:SendMouseButtonEvent(x,y,0,false,game,0)
-                    end)
-                    if not ok then warn("[GGT] Не удалось нажать Reconnect: "..tostring(err)) end
-                    return
-                end
-            end
-        end
-        g.Destroying:Connect(function() running=false end)
-        task.spawn(function()
-            while running do
-                if os.clock()>=nextAttempt then
-                    local ok,err=pcall(tryReconnect)
-                    if not ok then nextAttempt=os.clock()+15 warn("[GGT] Ошибка автореконнекта: "..tostring(err)) end
-                end
-                task.wait(2)
-            end
-        end)
-    end
-end
 local u,c=UDim2.new,Color3.fromRGB
 local bg,sd,cd,ac,tx,sb=c(15,15,21),c(21,21,29),c(27,27,37),c(130,85,255),c(242,242,247),c(145,145,165)
 local strokeColor,danger=c(44,44,58),c(200,55,65)
@@ -513,7 +456,7 @@ local stInfo=lb(stCard,"Статус: ВЫКЛ",u(1,-16,1,-70),u(0,8,0,64),tx,17
 local stAutoB=bt(p6,"АВТО-ЛАРЁК: ВЫКЛ",u(1,0,0,40),u(0,0,1,-40),ac,8)
 local afkOn=true
 local bindB,afkB,mailDelayBox,stallDelayBox
-extra.settingsRows=ui("ScrollingFrame",{Size=u(1,0,1,-82),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,CanvasSize=u(0,0,0,280)},p7)
+extra.settingsRows=ui("ScrollingFrame",{Size=u(1,0,1,-82),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,CanvasSize=u(0,0,0,450)},p7)
 do
     local function settingRow(y)
         return ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,y),BackgroundColor3=cd},extra.settingsRows,8,1)
@@ -624,6 +567,28 @@ do
     local row=ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,240),BackgroundColor3=cd},extra.settingsRows,8,1)
     lb(row,"Клавиша AFK (Esc — убрать):",u(0.62,0,1,0),u(0,10,0,0),sb)
     extra.afkBindB=bt(row,"Не задана",u(0.35,-8,0,24),u(0.65,0,0,6),bg,6,1)
+end
+do
+    local button=bt(extra.settingsRows,"ВКЛЮЧИТЬ ВСЕ ПОКУПКИ",u(1,-5,0,36),u(0,0,0,280),ac,8)
+    extra.allPurchasesStatus=lb(extra.settingsRows,"",u(1,-10,0,42),u(0,5,0,320),sb,17)
+    extra.allPurchasesStatus.TextWrapped=true
+    button.Activated:Connect(function() if extra.activateAllPurchases then extra.activateAllPurchases() end end)
+end
+do
+    local row=ui("Frame",{Size=u(1,-5,0,36),Position=u(0,0,0,365),BackgroundColor3=cd},extra.settingsRows,8,1)
+    lb(row,"Автозадания: регион и награды",u(0.8,0,1,0),u(0,10,0,0),sb)
+    local button=bt(row,"OFF",u(0,46,0,24),u(1,-54,0,6),bg,6,1)
+    extra.autoTaskStatus=lb(extra.settingsRows,"",u(1,-10,0,42),u(0,5,0,405),sb,17)
+    extra.autoTaskStatus.TextWrapped=true
+    extra.setTaskAutomation=function(value)
+        extra.taskAutomation=value==true
+        extra.taskGeneration=(extra.taskGeneration or 0)+1
+        button.Text=extra.taskAutomation and "ON" or "OFF"
+        button.BackgroundColor3=extra.taskAutomation and ac or bg
+        if extra.taskAutomation then extra.setClaimTasks(true) end
+        if extra.persistRuntime then extra.persistRuntime() end
+    end
+    button.Activated:Connect(function() extra.setTaskAutomation(not extra.taskAutomation) end)
 end
 
 local function configOptimization(raw)
@@ -2007,6 +1972,19 @@ do
             else status.Text="Не удалось привязать аккаунт: проверь адрес и код." end
         end)
     end
+    extra.exportSharedTelegram=function()
+        if shared and validUrl(shared.url) and type(shared.code)=="string" and #shared.code>=20 and #shared.code<=100 then
+            return {url=shared.url,code=shared.code}
+        end
+    end
+    extra.importSharedTelegram=function(linkData)
+        if type(linkData)~="table" or not validUrl(linkData.url) or type(linkData.code)~="string" or #linkData.code<20 or #linkData.code>100 then return false end
+        local candidate={url=linkData.url,code=linkData.code}
+        if not writeVerified(sharedFile,candidate) then return false end
+        shared=candidate
+        if cfg.token=="" then pairAccount(shared.url,shared.code) end
+        return true
+    end
     link.Activated:Connect(function()
         if busy then return end
         if type(requestFn)~="function" then status.Text="Executor не поддерживает HTTP-запросы." return end
@@ -2033,7 +2011,24 @@ do
     local session=Http:GenerateGUID(false)
     local seq=0
     extra.statsSession=session extra.statsSequence=0
-    if cfg.token=="" and shared then pairAccount(shared.url,shared.code) end
+    if type(savedConfig.telegramLink)=="table" and validUrl(savedConfig.telegramLink.url) and type(savedConfig.telegramLink.code)=="string"
+        and #savedConfig.telegramLink.code>=20 and #savedConfig.telegramLink.code<=100 then
+        shared={url=savedConfig.telegramLink.url,code=savedConfig.telegramLink.code}
+    end
+    local sharedProfiles=(function()
+        if not loadedConfig and type(listfiles)=="function" then
+            local ok,files=pcall(listfiles,"GGT")
+            if ok and type(files)=="table" then
+                for _,file in ipairs(files) do
+                    local name=type(file)=="string" and file:gsub("\\","/"):match("([^/]+)$")
+                    if name and name:match("^shared_config_[%w_-]+%.json$") then return true end
+                end
+            end
+        end
+        return false
+    end)()
+    if cfg.token=="" and shared and not sharedProfiles then pairAccount(shared.url,shared.code)
+    elseif cfg.token=="" and sharedProfiles then status.Text="Выбери общий конфиг для привязки Telegram." end
     task.spawn(function()
         local getState=Rem:FindFirstChild("GetState")
         if getState then
@@ -2383,6 +2378,7 @@ do
     end
 
     applyTabFields(savedConfig)
+    if type(savedConfig.telegramLink)=="table" and extra.importSharedTelegram then extra.importSharedTelegram(savedConfig.telegramLink) end
 
     local lastSavedData=nil
     saveConfig=function(recipientOnly)
@@ -2402,6 +2398,7 @@ do
                 traderFilters={true,true,false},
                 traderReserve=configNumber(savedConfig.traderReserve,0,0,1e15),
                 potionTiers=table.clone(itemRule.tiers), potionMode=itemRule.mode, potionInterval=itemRule.interval.Text, itemThreshold=itemRule.threshold.Text,
+                telegramLink=type(savedConfig.telegramLink)=="table" and table.clone(savedConfig.telegramLink) or nil,
                 afkOn=afkOn,
                 runtime=extra.getRuntime and extra.getRuntime() or savedConfig.runtime,
                 mailAmount=configNumber(parseM(sumBox.Text),0,0,1e15),
@@ -2491,6 +2488,7 @@ do
         mailDelayBox.Text=tostring(configNumber(config.mailDelay,4,2,3600))
         stallDelayBox.Text=tostring(configNumber(config.stallDelay,2,1,3600))
         recipientBook.load(config)
+        if type(config.telegramLink)=="table" and extra.importSharedTelegram then extra.importSharedTelegram(config.telegramLink) end
         refreshTraderFilters()
         applyTabFields(config)
         optCfg=configOptimization(config.optimization)
@@ -2571,7 +2569,11 @@ do
         if not configReadable or not saveConfig() then status.Text="Не удалось сохранить текущий конфиг." return end
         local ok,contents=pcall(readfile,configPath)
         if not ok or type(contents)~="string" then status.Text="Не удалось прочитать текущий конфиг." return end
-        local written=pcall(writefile,"GGT/shared_config_"..activeConfig..".json",contents)
+        local parsed,data=pcall(function() return Http:JSONDecode(contents) end)
+        if not parsed or type(data)~="table" then status.Text="Не удалось прочитать настройки." return end
+        data.telegramLink=extra.exportSharedTelegram and extra.exportSharedTelegram() or nil
+        local encodedOk,encoded=pcall(function() return Http:JSONEncode(data) end)
+        local written=encodedOk and pcall(writefile,"GGT/shared_config_"..activeConfig..".json",encoded)
         status.Text=written and ("Общий шаблон: "..activeConfig) or "Не удалось создать общий шаблон."
     end)
     nextProfile.Activated:Connect(function()
@@ -3070,13 +3072,29 @@ tB.MouseButton1Click:Connect(function() extra.setSniperRunning(not run) end)
 
 extra.getRuntime=function()
     return {sniper=run,mailTake=takeRun,stall=stRun,trader=extra.traderRunning==true,
-        upkeep=extra.upkeepEnabled==true,claimTasks=extra.claimTasksEnabled==true,potions=itemRule.isEnabled()}
+        upkeep=extra.upkeepEnabled==true,claimTasks=extra.claimTasksEnabled==true,potions=itemRule.isEnabled(),taskAutomation=extra.taskAutomation==true}
+end
+extra.activateAllPurchases=function()
+    local sniperReady=false
+    for _,rarity in ipairs(rars) do if rarity.on and getRarMax(rarity.id)>0 then sniperReady=true break end end
+    if sniperReady then extra.setSniperRunning(true) end
+    extra.setTraderRunning(true)
+    extra.setStallRunning(true)
+    task.spawn(function()
+        itemRule.setEnabled(true)
+        if not g.Parent then return end
+        local issues={}
+        if not sniperReady then table.insert(issues,"снайпер: включи редкость и укажи цену") end
+        if not itemRule.isEnabled() then table.insert(issues,"зелья: проверь тир и параметры") end
+        extra.allPurchasesStatus.Text=#issues>0 and table.concat(issues,"; ") or "Все режимы включены с текущими настройками."
+    end)
 end
 extra.applyRuntime=function(runtime)
     if type(runtime)~="table" then return end
     if type(runtime.trader)=="boolean" then extra.setTraderRunning(runtime.trader) end
     if type(runtime.upkeep)=="boolean" then extra.setUpkeep(runtime.upkeep) end
     if type(runtime.claimTasks)=="boolean" then extra.setClaimTasks(runtime.claimTasks) end
+    if type(runtime.taskAutomation)=="boolean" then extra.setTaskAutomation(runtime.taskAutomation) end
     if type(runtime.mailTake)=="boolean" then extra.setTakeRunning(runtime.mailTake) end
     if type(runtime.stall)=="boolean" then extra.setStallRunning(runtime.stall) end
     if type(runtime.sniper)=="boolean" then extra.setSniperRunning(runtime.sniper) end
@@ -3096,3 +3114,185 @@ task.defer(function()
     extra.applyRuntime(savedConfig.runtime)
     extra.configApplying=false
 end)
+
+-- Управление только существующими элементами крутки игры.
+;(function()
+    local function rollWindow()
+        local pg=plr:FindFirstChild("PlayerGui")
+        local plates=pg and pg:FindFirstChild("PlatesUI")
+        return plates and plates:FindFirstChild("RollWindow",true)
+    end
+    local function fireButton(button)
+        if not button or not button:IsA("GuiButton") then return false end
+        local signal=button.MouseButton1Click
+        if type(getconnections)=="function" then
+            local ok,connections=pcall(getconnections,signal)
+            if ok and type(connections)=="table" then
+                local fired=false
+                for _,connection in ipairs(connections) do
+                    if connection.Enabled~=false and type(connection.Fire)=="function" then
+                        local success=pcall(function() connection:Fire() end)
+                        fired=fired or success
+                    end
+                end
+                if fired then return true end
+            end
+        end
+        if type(firesignal)=="function" then return pcall(firesignal,signal) end
+        return false
+    end
+    local function rollController()
+        if type(getgc)~="function" then return nil end
+        local ok,objects=pcall(getgc,true)
+        if not ok or type(objects)~="table" then return nil end
+        for _,object in ipairs(objects) do
+            if type(object)=="table" and type(rawget(object,"autoOn"))=="function"
+                and type(rawget(object,"collapseRoll"))=="function" and type(rawget(object,"rollBlocked"))=="function" then
+                return object
+            end
+        end
+    end
+    local function selectedRegion(window)
+        for _,object in ipairs(window:GetDescendants()) do
+            if object:IsA("GuiButton") and object.Name:match("^Region_[%w_]+$") and object:GetAttribute("Selected")==true then
+                return object.Name:sub(8)
+            end
+        end
+    end
+    local function selectRegion(window,id)
+        if type(id)~="string" or not id:match("^[%w_]+$") then return false end
+        local button=window:FindFirstChild("Region_"..id,true)
+        if not button then return false end
+        if button:GetAttribute("Selected")==true then return true end
+        if not fireButton(button) then return false end
+        task.wait(0.25)
+        return g.Parent and button:GetAttribute("Selected")==true
+    end
+    task.spawn(function()
+        task.wait(8)
+        local untilTime=os.clock()+90
+        local attempts=0
+        while g.Parent and os.clock()<untilTime do
+            local stateRemote=Rem:FindFirstChild("GetState")
+            local ok,state=false,nil
+            if stateRemote then ok,state=pcall(function() return stateRemote:InvokeServer() end) end
+            local window,controller=rollWindow(),rollController()
+            if ok and type(state)=="table" and state.hasAutoroll==false then return end
+            if ok and type(state)=="table" and state.hasAutoroll==true and window and controller then
+                local stateOk,on=pcall(rawget(controller,"autoOn"))
+                if stateOk and on==true then return end
+                if stateOk and on==false then
+                    local button=window:FindFirstChild("AutoButton",true)
+                    if button and button.Visible then
+                        if not window.Visible and rawget(controller,"rollMini")~=true then window.Visible=true end
+                        if fireButton(button) then
+                            attempts+=1 task.wait(2)
+                            local checkOk,running=pcall(rawget(controller,"autoOn"))
+                            if checkOk and running==true then return end
+                            if attempts>=3 then break end
+                        else break end
+                    end
+                end
+            end
+            task.wait(5)
+        end
+        if g.Parent then warn("[GGT] Не удалось проверить или включить автокрутку: проверь доступ executor и игровое меню.") end
+    end)
+    task.spawn(function()
+        local assigned,previous,paused=nil,nil,false
+        local function restore(window)
+            if assigned and previous and window and selectedRegion(window)==assigned then selectRegion(window,previous) end
+            assigned,previous=nil,nil
+        end
+        while g.Parent do
+            local window=rollWindow()
+            if not extra.taskAutomation then
+                if assigned then restore(window) end
+                paused=false
+                extra.autoTaskStatus.Text="Автовыполнение выключено."
+            elseif paused then
+                extra.autoTaskStatus.Text="Регион изменён вручную; выключи и включи автозадания заново."
+            else
+                local remote=Rem:FindFirstChild("GetState")
+                local ok,state=false,nil
+                local generation=extra.taskGeneration
+                if remote then ok,state=pcall(function() return remote:InvokeServer() end) end
+                if not g.Parent then break end
+                if not extra.taskAutomation or generation~=extra.taskGeneration then continue end
+                local tasks=ok and type(state)=="table" and state.tasks
+                local target=nil
+                if type(tasks)=="table" and type(tasks.list)=="table" and type(tasks.progress)=="table" then
+                    for _,entry in ipairs(tasks.list) do
+                        if type(entry)=="table" and entry.id=="region" and type(entry.regionId)=="string" and type(entry.need)=="number"
+                            and (tonumber(tasks.progress[entry.id]) or 0)<entry.need and not (type(tasks.claimed)=="table" and tasks.claimed[entry.id]) then
+                            target=entry.regionId break
+                        end
+                    end
+                end
+                if not ok or type(tasks)~="table" or type(tasks.list)~="table" or type(tasks.progress)~="table" then
+                    extra.autoTaskStatus.Text="Ожидаю данные заданий."
+                elseif assigned and window and selectedRegion(window)~=assigned then
+                    assigned,previous=nil,nil paused=true
+                elseif assigned and not target then
+                    restore(window)
+                    extra.autoTaskStatus.Text="Региональное задание завершено."
+                elseif target and window then
+                    local current=selectedRegion(window)
+                    if assigned and target~=assigned then restore(window) current=selectedRegion(window) end
+                    if current==target then
+                        extra.autoTaskStatus.Text="Задание: регион "..target.."; ожидание прокруток."
+                    elseif current and selectRegion(window,target) then
+                        previous,assigned=current,target
+                        extra.autoTaskStatus.Text="Выбран регион задания: "..target.."."
+                    else
+                        extra.autoTaskStatus.Text="Регион задания недоступен; открой меню регионов и проверь executor."
+                    end
+                else
+                    extra.autoTaskStatus.Text="Регионального задания нет; действия вроде продажи и полировки выполняются вручную."
+                end
+            end
+            for _=1,15 do if not g.Parent then break end task.wait(1) end
+        end
+    end)
+end)()
+
+-- Автореджоин из предоставленного файла; соединения живут вместе с меню.
+;(function()
+    local TeleportService=game:GetService("TeleportService")
+    local GuiService=game:GetService("GuiService")
+    local CoreGui=game:GetService("CoreGui")
+    local Players=game:GetService("Players")
+    local player=Players.LocalPlayer
+    local placeId,jobId=game.PlaceId,game.JobId
+    local rejoining=false
+    local connections={}
+    local function startRejoin()
+        if rejoining or not g.Parent then return end
+        rejoining=true
+        local queue=type(queue_on_teleport)=="function" and queue_on_teleport or (type(queueonteleport)=="function" and queueonteleport) or (type(syn)=="table" and syn.queue_on_teleport)
+        if type(queue)=="function" then
+            pcall(queue,[[loadstring(game:HttpGet("https://raw.githubusercontent.com/HeexMex/generator-good-try/main/generator_good_try.lua"))()]])
+        else
+            warn("[GGT] Executor не предоставляет queue_on_teleport; после входа запусти скрипт снова.")
+        end
+        local attempt=0
+        while g.Parent do
+            attempt+=1
+            pcall(function()
+                if attempt<=2 and jobId~="" then TeleportService:TeleportToPlaceInstance(placeId,jobId,player)
+                else TeleportService:Teleport(placeId,player) end
+            end)
+            task.wait(5)
+        end
+    end
+    table.insert(connections,GuiService.ErrorMessageChanged:Connect(function(msg)
+        if msg and msg~="" then task.spawn(startRejoin) end
+    end))
+    g.Destroying:Connect(function() for _,connection in ipairs(connections) do connection:Disconnect() end end)
+    local overlay=CoreGui:WaitForChild("RobloxPromptGui"):WaitForChild("promptOverlay")
+    if not g.Parent then return end
+    if overlay:FindFirstChild("ErrorPrompt") then task.spawn(startRejoin) end
+    table.insert(connections,overlay.ChildAdded:Connect(function(child)
+        if child.Name=="ErrorPrompt" then task.spawn(startRejoin) end
+    end))
+end)()
