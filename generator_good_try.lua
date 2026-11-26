@@ -2523,6 +2523,23 @@ do
     local function rememberActive()
         if type(writefile)=="function" then pcall(writefile,markerPath,activeConfig) end
     end
+    local function publishShared(name,overwrite)
+        if not validConfigName(name) or type(readfile)~="function" or type(writefile)~="function" or type(isfile)~="function" then return false,"Executor не поддерживает файлы." end
+        local path="GGT/shared_config_"..name..".json"
+        local checked,exists=pcall(isfile,path)
+        if not checked then return false,"Не удалось проверить общий конфиг." end
+        if exists and not overwrite then return false,"Общий конфиг с таким именем уже существует." end
+        local ok,contents=pcall(readfile,configFile(name))
+        if not ok or type(contents)~="string" then return false,"Не удалось прочитать текущий конфиг." end
+        local parsed,data=pcall(function() return Http:JSONDecode(contents) end)
+        if not parsed or type(data)~="table" or data.version~=1 then return false,"Не удалось прочитать настройки." end
+        if name==activeConfig and extra.exportSharedTelegram then
+            data.telegramLink=extra.exportSharedTelegram() or data.telegramLink
+        end
+        local encodedOk,encoded=pcall(function() return Http:JSONEncode(data) end)
+        if not encodedOk or not pcall(writefile,path,encoded) then return false,"Не удалось создать общий конфиг." end
+        return true
+    end
     createProfile.Activated:Connect(function()
         local name=nameBox.Text
         if not validConfigName(name) or name=="default" then status.Text="Имя: латинские буквы, цифры, - или _." return end
@@ -2535,7 +2552,8 @@ do
         activeConfig,configPath,lastSavedData=name,newPath,nil
         if not saveConfig() then activeConfig,configPath,lastSavedData=oldName,oldPath,nil status.Text="Ошибка создания конфига." return end
         rememberActive()
-        status.Text="Активный: "..name.." · автосохранение"
+        local sharedOk,sharedError=publishShared(name,false)
+        status.Text=sharedOk and ("Создан общий конфиг: "..name) or ("Личный конфиг создан. "..sharedError)
     end)
     local function selectProfile(name,shared)
         if not configReadable or not saveConfig() then status.Text="Текущий конфиг недоступен для сохранения." return end
@@ -2567,14 +2585,17 @@ do
     end
     publishProfile.Activated:Connect(function()
         if not configReadable or not saveConfig() then status.Text="Не удалось сохранить текущий конфиг." return end
-        local ok,contents=pcall(readfile,configPath)
-        if not ok or type(contents)~="string" then status.Text="Не удалось прочитать текущий конфиг." return end
-        local parsed,data=pcall(function() return Http:JSONDecode(contents) end)
-        if not parsed or type(data)~="table" then status.Text="Не удалось прочитать настройки." return end
-        data.telegramLink=extra.exportSharedTelegram and extra.exportSharedTelegram() or nil
-        local encodedOk,encoded=pcall(function() return Http:JSONEncode(data) end)
-        local written=encodedOk and pcall(writefile,"GGT/shared_config_"..activeConfig..".json",encoded)
-        status.Text=written and ("Общий шаблон: "..activeConfig) or "Не удалось создать общий шаблон."
+        local written,err=publishShared(activeConfig,true)
+        status.Text=written and ("Общий шаблон: "..activeConfig) or err
+    end)
+    task.defer(function()
+        if not g.Parent or not configReadable then return end
+        -- Make the current account's existing named profiles discoverable;
+        -- never overwrite an existing shared template during migration.
+        saveConfig()
+        for _,name in ipairs(profiles()) do
+            if name~="default" and name:sub(1,7)~="shared_" then publishShared(name,false) end
+        end
     end)
     nextProfile.Activated:Connect(function()
         profileList.Visible=not profileList.Visible
