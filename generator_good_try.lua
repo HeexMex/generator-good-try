@@ -900,7 +900,7 @@ do
     local function total() local n=0 for _,v in pairs(mailItems) do n+=v end return n end
     local function refreshButton() extra.itemPickB.Text="Предм.: "..total() end
     local function eligible(id)
-        return type(id)=="string" and (id:match("^potion_%a+_5$") or id:match("^elixir_%d+$") or id:match("^roll_%d+$"))~=nil
+        return type(id)=="string" and (id:match("^potion_%a+_5$") or id:match("^elixir_%d+$") or id:match("^roll_%d+$") or id:match("^coupon_%u+$"))~=nil
     end
     local refreshId=0
     local displayed,quantityBoxes={},{}
@@ -908,7 +908,7 @@ do
         local stateRemote=Rem:FindFirstChild("GetState")
         if stateRemote then
             local ok,state=pcall(function() return stateRemote:InvokeServer() end)
-            if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots end
+            if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots,state.money end
         end
         if type(getgc)=="function" then
             local gcOk,objects=pcall(getgc,true)
@@ -920,13 +920,20 @@ do
             end
         end
     end
-    extra.validateMailItems=function(items)
-        local slots=inventory()
-        if type(slots)~="table" then return false,"Не удалось проверить инвентарь предметов." end
+    extra.readMailInventory=function()
+        local slots,money=inventory()
+        if type(slots)~="table" then return nil,money end
         local available={}
         for _,slot in ipairs(slots) do
-            if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" then available[slot.id]=slot.n end
+            if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" and slot.n>0 then
+                available[slot.id]=(available[slot.id] or 0)+math.floor(slot.n)
+            end
         end
+        return available,money
+    end
+    extra.validateMailItems=function(items)
+        local available=extra.readMailInventory()
+        if type(available)~="table" then return false,"Не удалось проверить инвентарь предметов." end
         for id,count in pairs(items) do
             if not eligible(id) or count>(available[id] or 0) then return false,"Количество предметов изменилось. Проверь вложения." end
         end
@@ -2011,6 +2018,10 @@ do
                 seq=seq+1
                 extra.statsSequence=seq
                 local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
+                data.mail_protocol=2
+                local invOk,mailInventory,mailBalance=pcall(extra.readMailInventory)
+                if invOk and type(mailInventory)=="table" and next(mailInventory) then data.mail_items=mailInventory end
+                if invOk and type(mailBalance)=="number" and mailBalance>=0 then latestBalance=math.floor(mailBalance) data.balance=latestBalance data.mail_balance=latestBalance end
                 local scanOk,plates,verified,counts=pcall(scanMyPlates)
                 if scanOk and verified then
                     local candidates={}
@@ -2647,11 +2658,21 @@ do
     end
     local function executeBatch(batch)
         if type(batch)~="table" or type(batch.id)~="string" or type(batch.recipient)~="string"
-            or configNickname(batch.recipient)=="" or type(batch.plates)~="table" or #batch.plates<1 or #batch.plates>30 then
+            or configNickname(batch.recipient)=="" or type(batch.plates)~="table" or #batch.plates>30 then
             return "failed","Некорректное задание"
         end
-        local ok,plates,verified=pcall(scanMyPlates)
-        if not ok or not verified then return "failed","Не удалось проверить инвентарь" end
+        local items=batch.items or {}
+        local money=batch.money or 0
+        if type(items)~="table" or type(money)~="number" or money<0 or money%1~=0 or money>1e15 then return "failed","Некорректные вложения" end
+        local itemCount=0
+        for id,quantity in pairs(items) do
+            if type(id)~="string" or type(quantity)~="number" or quantity<1 or quantity%1~=0 then return "failed","Некорректные предметы" end
+            itemCount+=quantity
+        end
+        if itemCount>90 or (#batch.plates==0 and itemCount==0 and money==0) then return "failed","Некорректный состав посылки" end
+        local ok,plates,verified=true,{},true
+        if #batch.plates>0 then ok,plates,verified=pcall(scanMyPlates) end
+        if not ok or not verified then return "failed","Не удалось проверить инвентарь номеров" end
         local available={}
         for _,plate in ipairs(plates) do available[plate.id]=true end
         local chosen,seen={},{}
@@ -2665,11 +2686,22 @@ do
             return "failed",type(look)=="table" and tostring(look.err or "Получатель не найден") or "Не удалось найти получателя"
         end
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
-        local scanOk,fresh,stillVerified=pcall(scanMyPlates)
+        local scanOk,fresh,stillVerified=true,{},true
+        if #chosen>0 then scanOk,fresh,stillVerified=pcall(scanMyPlates) end
         if not scanOk or not stillVerified then return "failed","Не удалось повторно проверить инвентарь" end
         local stillAvailable={}
         for _,plate in ipairs(fresh) do stillAvailable[plate.id]=true end
         for _,uid in ipairs(chosen) do if not stillAvailable[uid] then return "failed","Номера изменились перед отправкой" end end
+        if itemCount>0 or money>0 then
+            local inventoryOk,inventory,balance=pcall(extra.readMailInventory)
+            if not inventoryOk or type(inventory)~="table" then return "failed","Не удалось проверить предметы и баланс" end
+            for id,quantity in pairs(items) do
+                if quantity>(inventory[id] or 0) then return "failed","Количество предметов изменилось: "..id end
+            end
+            if money>0 and (type(balance)~="number" or balance<money+math.ceil(money/10)) then
+                return "failed","Недостаточно средств с учётом комиссии 10%"
+            end
+        end
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
         local permission=extra.mailRequest("POST","/api/mail/begin",{batch_id=batch.id})
         if responseStatus(permission)~=200 then
@@ -2678,7 +2710,7 @@ do
         end
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
         extra.lastMailSent=os.clock()
-        local sent,result=pcall(function() return PS:InvokeServer("send",tonumber(look.toId),chosen,{},0) end)
+        local sent,result=pcall(function() return PS:InvokeServer("send",tonumber(look.toId),chosen,items,money) end)
         if not sent or type(result)~="table" then return "unknown","Нет подтверждения; проверь исходящие" end
         if not result.ok then return "failed",tostring(result.err or "Игра отклонила отправку") end
         for _,uid in ipairs(chosen) do sentPlates[uid]=true selPlates[uid]=nil end
@@ -2693,7 +2725,7 @@ do
                 if responseStatus(response)==200 then pendingResult=nil end
             elseif not sendInProgress and (not extra.lastMailSent or os.clock()-extra.lastMailSent>=6) then
                 sendInProgress=true
-                local response=extra.mailRequest("GET","/api/mail/next")
+                local response=extra.mailRequest("GET","/api/mail/next?protocol=2")
                 local ok,parsed=pcall(function() return Http:JSONDecode(response.Body) end)
                 local batch=ok and type(parsed)=="table" and parsed.batch
                 if responseStatus(response)==200 and type(batch)=="table" then
