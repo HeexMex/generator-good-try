@@ -204,7 +204,7 @@ local rars={
     {id="RARE",n="Редкий",def="150000",col=c(65,155,255),on=false},
     {id="EPIC",n="Эпический",def="500000",col=c(155,85,255),on=false},
     {id="MYTHIC",n="Мифический",def="8000000",col=c(238,72,68),on=false},
-    {id="LEGENDARY",n="Легендарный",def="15000000",col=c(255,185,50),on=false}
+    {id="LEGEND",n="Легендарный",def="15000000",col=c(255,185,50),on=false}
 }
 local rarMap={}
 for i,r in ipairs(rars) do
@@ -496,6 +496,7 @@ do
             stallLevels[i]=type(levels)~="table" or levels[i]~=false
             showLevel(i)
         end
+        extra.stallWake=true
     end
     for i=1,4 do
         local button=bt(stCard,tostring(i)..": ON",u(0.25,-6,0,28),u((i-1)*0.25,4,0,28),ac,6)
@@ -503,6 +504,7 @@ do
         button.Activated:Connect(function()
             stallLevels[i]=not stallLevels[i]
             showLevel(i)
+            extra.stallWake=true
             if extra.persistRuntime then extra.persistRuntime() end
         end)
     end
@@ -530,7 +532,7 @@ do
     mailDelayBox=bx(mailRow,tostring(configNumber(savedConfig.mailDelay,4,2,3600)),u(0,46,0,24),u(1,-54,0,7))
 
     local stallRow=settingRow(120)
-    lb(stallRow,"Пауза проверки ларька (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
+    lb(stallRow,"Повтор ларька при ошибке (сек):",u(0.7,0,1,0),u(0,10,0,0),sb)
     stallDelayBox=bx(stallRow,tostring(configNumber(savedConfig.stallDelay,2,1,3600)),u(0,46,0,24),u(1,-54,0,7))
 end
 
@@ -688,7 +690,8 @@ local pScroll=ui("ScrollingFrame",{Size=u(1,-10,1,-42),Position=u(0,5,0,5),Backg
 local pAllB=bt(pModal,"Выбрать все",u(0.55,-8,0,28),u(0,5,1,-33),cd,6) pAllB.ZIndex=9
 local pDoneB=bt(pModal,"Готово",u(0.45,-7,0,28),u(0.55,2,1,-33),ac,6) pDoneB.ZIndex=9
 
-local rarStyle={RARE={n="Редкий",c="#419BFF"},EPIC={n="Эпический",c="#9B55FF"},MYTHIC={n="Мифический",c="#EE4844"},LEGENDARY={n="Легендарный",c="#FFB932"},ORIGINAL={n="Оригинал",c="#38BDF8"}}
+local rarStyle={RARE={n="Редкий",c="#419BFF"},EPIC={n="Эпический",c="#9B55FF"},MYTHIC={n="Мифический",c="#EE4844"},LEGEND={n="Легендарный",c="#FFB932"},ORIGINAL={n="Оригинал",c="#38BDF8"}}
+rarStyle.LEGENDARY=rarStyle.LEGEND
 local function fmtNum(n) local s=tostring(math.floor(tonumber(n) or 0)) return s:reverse():gsub("(%d%d%d)","%1 "):reverse():gsub("^ ","") end
 local function fmtPlateRich(rawStr)
     local txt,code=rawStr:match("^(.-)%s*%[(.-)%]$")
@@ -1385,7 +1388,7 @@ local afkRolls = (function()
         ["ОБЫЧНЫЙ"]="COMMON", ["Обычный"]="COMMON",
         ["НЕОБЫЧНЫЙ"]="UNCOMMON", ["Необычный"]="UNCOMMON",
         ["РЕДКИЙ"]="RARE", ["ЭПИЧЕСКИЙ"]="EPIC",
-        ["МИФИЧЕСКИЙ"]="MYTHIC", ["ЛЕГЕНДАРНЫЙ"]="LEGENDARY",
+        ["МИФИЧЕСКИЙ"]="MYTHIC", ["ЛЕГЕНДАРНЫЙ"]="LEGEND",
     }
     for _,rarity in ipairs(rars) do
         rarityByText[rarity.n] = rarity.id
@@ -2237,26 +2240,31 @@ do
     mode.Activated:Connect(function() if armed or starting then stop() end itemRule.setMode(itemRule.mode=="timer" and "rolls" or "timer") if extra.persistRuntime then extra.persistRuntime() end end)
     info=lb(p9,"По три зелья каждого выбранного тира.",u(1,-8,0,36),u(0,4,0,182),sb,17) info.TextWrapped=true
     itemRule.button=bt(p9,"АВТО-ЗЕЛЬЯ: ВЫКЛ",u(1,-8,0,36),u(0,4,1,-40),ac,8)
-    local function useTiers(current,tiers)
+    local function useTiers(current,tiers,due,interval)
         local inventory=Rem:FindFirstChild("Inventory")
-        if not inventory then info.Text="Ошибка: Inventory не найден." return end
+        if not inventory then info.Text="Inventory ещё не доступен; повторю проверку." return end
         local successes,attempts=0,0
         local lastFailure=nil
         for tier=1,3 do
             if tiers[tier] then
                 for _,kind in ipairs({"luck","speed","money"}) do
                     if current~=generation or not g.Parent then return end
-                    attempts+=1
-                    local ok,result=pcall(function() return inventory:InvokeServer("use","potion_"..kind.."_"..tier) end)
-                    if ok and type(result)=="number" and result>0 then successes+=1
-                    elseif ok and type(result)=="string" then lastFailure=result
-                    elseif not ok then lastFailure="нет ответа игры"
-                    else lastFailure="нет предмета или игра отклонила использование" end
-                    task.wait(0.5)
+                    local id="potion_"..kind.."_"..tier
+                    if not due or os.clock()>=(due[id] or 0) then
+                        attempts+=1
+                        local ok,result=pcall(function() return inventory:InvokeServer("use",id) end)
+                        local used=ok and type(result)=="number" and result>0
+                        if due then due[id]=os.clock()+(used and interval*60 or 60) end
+                        if used then successes+=1
+                        elseif ok and type(result)=="string" then lastFailure=result
+                        elseif not ok then lastFailure="нет ответа игры"
+                        else lastFailure="нет предмета или игра отклонила использование" end
+                        task.wait(0.5)
+                    end
                 end
             end
         end
-        if current==generation then info.Text="Использовано зелий: "..successes.." из "..attempts.."."..(lastFailure and " "..lastFailure or "") end
+        if current==generation and attempts>0 then info.Text="Использовано зелий: "..successes.." из "..attempts.."."..(lastFailure and (due and " Повтор через минуту: " or " Ошибка: ")..lastFailure or "") end
     end
     local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
         if type(state)~="table" or type(state.rollCount)~="number" then return end
@@ -2283,26 +2291,35 @@ do
             armed=true itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
             if extra.persistRuntime then extra.persistRuntime() end
             task.spawn(function()
+                local due={}
                 while armed and current==generation and g.Parent do
-                    useTiers(current,itemRule.tiers)
-                    local untilTime=os.clock()+interval*60
-                    while armed and current==generation and g.Parent and os.clock()<untilTime do task.wait(math.min(5,math.max(0.1,untilTime-os.clock()))) end
+                    local updated=tonumber(itemRule.interval.Text)
+                    if updated and updated>=1 and updated<=1440 then interval=updated end
+                    useTiers(current,itemRule.tiers,due,interval)
+                    if armed and current==generation and g.Parent then task.wait(5) end
                 end
             end)
         else
             local n=tonumber(itemRule.threshold.Text)
             if not n or n<1 or n%1~=0 then info.Text="Укажи целое число круток." return end
-            local remote=Rem:FindFirstChild("GetState")
             local ok,state=false,nil
             generation+=1 local current=generation starting=true
             info.Text="Получаю счётчик круток..."
-            local beforeRequest=observedVersion
-            if remote then ok,state=pcall(function() return remote:InvokeServer() end) end
+            if extra.persistRuntime then extra.persistRuntime() end
+            local beforeRequest
+            while current==generation and g.Parent do
+                local remote=Rem:FindFirstChild("GetState")
+                beforeRequest=observedVersion
+                if remote then ok,state=pcall(function() return remote:InvokeServer() end) end
+                if current~=generation or not g.Parent then return end
+                if ok and type(state)=="table" and type(state.rollCount)=="number" then break end
+                info.Text="Нет счётчика круток; повторю через 10 секунд."
+                for _=1,10 do if current~=generation or not g.Parent then return end task.wait(1) end
+            end
             if current~=generation or not g.Parent then return end
             starting=false
-            if not ok or type(state)~="table" or type(state.rollCount)~="number" then info.Text="Не удалось получить счётчик." return end
             if observedVersion~=beforeRequest and observedCount then state.rollCount=observedCount end
-            if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." return end
+            if state.rollCount>=n then info.Text="Порог уже достигнут. Укажи число выше "..state.rollCount.."." if extra.persistRuntime then extra.persistRuntime() end return end
             target,lastCount=n,state.rollCount armed=true
             itemRule.button.Text="АВТО-ЗЕЛЬЯ: ВКЛ" itemRule.button.BackgroundColor3=danger
             info.Text="Ожидаю "..n.." круток. Сейчас: "..lastCount.."."
@@ -2340,7 +2357,7 @@ do
         end
         local byRarity=type(market.rarities)=="table" and market.rarities or {}
         for _,rarity in ipairs(rars) do
-            local rule=byRarity[rarity.id]
+            local rule=byRarity[rarity.id] or (rarity.id=="LEGEND" and byRarity.LEGENDARY)
             local defaultPrice=tonumber(rarity.def)
             local price=defaultPrice
             rarity.on=false
@@ -2870,37 +2887,87 @@ local function buyAllStall(session,stock)
 end
 
 local totalStallBought=0
-task.spawn(function()
-    while g.Parent do
-        local stallWait=math.max(2,tonumber(stallDelayBox.Text) or 2)
-        if not stRun then
-            stInfo.Text="Статус: ВЫКЛ"
-        else
-            local session=extra.stallSession
-            local stock,reason=getStallState()
-            if not stRun or session~=extra.stallSession or not g.Parent then continue end
-            if stock then
-                stInfo.Text="Проверяю остатки ларька..."
-                local cnt,problem=buyAllStall(session,stock)
-                totalStallBought=totalStallBought+cnt
-                if problem then stallWait=math.max(stallWait,15) end
-                if stRun and session==extra.stallSession then
-                    stInfo.Text=(problem or (cnt>0 and "Выбранные зелья куплены." or "Выбранных зелий нет в наличии.")).."\nВсего куплено: "..totalStallBought.." шт."
-                end
-            else
-                stInfo.Text="Не удалось получить остатки: "..tostring(reason).."\nВсего куплено: "..totalStallBought.." шт."
-                stallWait=math.max(stallWait,10)
-            end
-        end
-        task.wait(stallWait)
+(function()
+    local function serverClock()
+        local scripts=plr:FindFirstChild("PlayerScripts")
+        local client=scripts and scripts:FindFirstChild("PlatesClient",true)
+        if not client then return nil end
+        local ok,now=pcall(function() return workspace:GetServerTimeNow() end)
+        local offset=client:GetAttribute("TimeOffset") or 0
+        if not ok or type(now)~="number" or type(offset)~="number" or offset~=offset then return nil end
+        return now+offset
     end
-end)
+    task.spawn(function()
+        local nextCheck,deadline,expiredRetries=0,nil,0
+        local status="Ожидание обновления."
+        while g.Parent do
+            if not stRun then
+                nextCheck,deadline,expiredRetries=0,nil,0
+                stInfo.Text="Статус: ВЫКЛ"
+            else
+                local now=serverClock()
+                if deadline and (not now or now>=deadline) then
+                    nextCheck,deadline=0,nil
+                end
+                if extra.stallWake or os.clock()>=nextCheck then
+                    extra.stallWake=false
+                    local session=extra.stallSession
+                    local stock,reason=getStallState()
+                    if stRun and session==extra.stallSession and g.Parent then
+                        local waitSeconds=60
+                        deadline=nil
+                        if stock then
+                            stInfo.Text="Проверяю остатки ларька..."
+                            local cnt,problem=buyAllStall(session,stock)
+                            totalStallBought+=cnt
+                            if stRun and session==extra.stallSession and g.Parent then
+                                now=serverClock()
+                                local ends=tonumber(stock.ends)
+                                local remaining=ends and now and ends-now
+                                status=problem or (cnt>0 and "Выбранные зелья куплены." or "Выбранных зелий нет в наличии.")
+                                if problem then
+                                    waitSeconds=math.max(30,configNumber(tonumber(stallDelayBox.Text),2,1,3600))
+                                    if remaining and remaining>0 then waitSeconds=math.min(waitSeconds,remaining) end
+                                elseif remaining and remaining>0 and remaining<=172800 then
+                                    deadline=ends
+                                    waitSeconds=math.huge
+                                    expiredRetries=0
+                                elseif remaining and remaining<=0 then
+                                    expiredRetries+=1
+                                    waitSeconds=math.min(30,3*2^math.min(expiredRetries-1,4))
+                                    status="Ожидаю обновления запаса."
+                                else
+                                    status=status.." Таймер недоступен; повторю через минуту."
+                                end
+                            end
+                        else
+                            status="Не удалось получить остатки: "..tostring(reason)
+                            waitSeconds=math.max(30,configNumber(tonumber(stallDelayBox.Text),2,1,3600))
+                        end
+                        nextCheck=os.clock()+waitSeconds
+                    end
+                end
+                if stRun and g.Parent then
+                    local countdown=""
+                    local nowTime=deadline and serverClock()
+                    if nowTime then
+                        local seconds=math.max(0,math.ceil(deadline-nowTime))
+                        countdown=string.format("\nОбновление через %d:%02d:%02d",math.floor(seconds/3600),math.floor(seconds/60)%60,seconds%60)
+                    end
+                    stInfo.Text=status..countdown.."\nВсего куплено: "..totalStallBought.." шт."
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end)()
 
 function extra.setStallRunning(value)
     value=value==true
     if stRun==value then return end
     stRun=value
     extra.stallSession+=1
+    extra.stallWake=true
     stAutoB.BackgroundColor3=stRun and danger or ac
     stAutoB.Text=stRun and "АВТО-ЛАРЁК: ВКЛ" or "АВТО-ЛАРЁК: ВЫКЛ"
     if extra.persistRuntime then extra.persistRuntime() end
