@@ -3141,17 +3141,6 @@ end)
         if type(firesignal)=="function" then return pcall(firesignal,signal) end
         return false
     end
-    local function rollController()
-        if type(getgc)~="function" then return nil end
-        local ok,objects=pcall(getgc,true)
-        if not ok or type(objects)~="table" then return nil end
-        for _,object in ipairs(objects) do
-            if type(object)=="table" and type(rawget(object,"autoOn"))=="function"
-                and type(rawget(object,"collapseRoll"))=="function" and type(rawget(object,"rollBlocked"))=="function" then
-                return object
-            end
-        end
-    end
     local function selectedRegion(window)
         for _,object in ipairs(window:GetDescendants()) do
             if object:IsA("GuiButton") and object.Name:match("^Region_[%w_]+$") and object:GetAttribute("Selected")==true then
@@ -3168,36 +3157,6 @@ end)
         task.wait(0.25)
         return g.Parent and button:GetAttribute("Selected")==true
     end
-    task.spawn(function()
-        task.wait(8)
-        local untilTime=os.clock()+90
-        local attempts=0
-        while g.Parent and os.clock()<untilTime do
-            local stateRemote=Rem:FindFirstChild("GetState")
-            local ok,state=false,nil
-            if stateRemote then ok,state=pcall(function() return stateRemote:InvokeServer() end) end
-            local window,controller=rollWindow(),rollController()
-            if ok and type(state)=="table" and state.hasAutoroll==false then return end
-            if ok and type(state)=="table" and state.hasAutoroll==true and window and controller then
-                local stateOk,on=pcall(rawget(controller,"autoOn"))
-                if stateOk and on==true then return end
-                if stateOk and on==false then
-                    local button=window:FindFirstChild("AutoButton",true)
-                    if button and button.Visible then
-                        if not window.Visible and rawget(controller,"rollMini")~=true then window.Visible=true end
-                        if fireButton(button) then
-                            attempts+=1 task.wait(2)
-                            local checkOk,running=pcall(rawget(controller,"autoOn"))
-                            if checkOk and running==true then return end
-                            if attempts>=3 then break end
-                        else break end
-                    end
-                end
-            end
-            task.wait(5)
-        end
-        if g.Parent then warn("[GGT] Не удалось проверить или включить автокрутку: проверь доступ executor и игровое меню.") end
-    end)
     task.spawn(function()
         local assigned,previous,paused=nil,nil,false
         local function restore(window)
