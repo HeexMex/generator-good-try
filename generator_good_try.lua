@@ -168,28 +168,10 @@ local tB=bt(p1,"СНАЙПЕР: ВЫКЛ",u(1,0,0,36),u(0,0,1,-36),ac,8)
 local refreshTraderFilters
 do
     local trCard=ui("Frame",{Size=u(1,0,0,194),BackgroundColor3=cd},p4,8,1)
-    local function normalizeItemName(value)
-        value = value:gsub("<[^>]*>", ""):gsub(utf8.char(160), " "):gsub(utf8.char(8239), " ")
-        return value:lower():gsub(utf8.charpattern,function(letter)
-            local code = utf8.codepoint(letter)
-            if code >= 0x410 and code <= 0x42F then return utf8.char(code+32) end
-            if code == 0x401 then return "ё" end
-            return letter
-        end)
-    end
-
     local filters = {
-        {name="Ролл удачи ×1M", matches=function(name)
-            if not name:find("ролл",1,true) or not name:find("удачи",1,true) then return false end
-            local scale = name:gsub("1%s*м", "1m")
-            return scale:find("%f[%w]1%s*m%f[%W]") or scale:find("%f[%d]1%s*000%s*000%f[%D]")
-        end},
-        {name="Эликсир / зелье V тира", matches=function(name)
-            if not name:find("эликсир",1,true) and not name:find("зелье",1,true) then return false end
-            return name:find("%f[%w]v%f[%W]") or name:find("%f[%d]5%s*тир")
-                or name:find("тир%s+5%f[%D]") or name:find("%s5%s*$")
-        end},
-        {name="Ролл удачи ×100K", matches=function(name) return false end},
+        {name="Ролл удачи ×1M"},
+        {name="Эликсир / зелье V тира"},
+        {name="Ролл удачи ×100K"},
     }
 
     lb(trCard,"Фильтр ассортимента",u(1,-24,0,28),u(0,12,0,8),tx,18).TextSize = 13
@@ -219,7 +201,7 @@ do
         if balanceBox then balanceBox.Text=tostring(configNumber(savedConfig.traderReserve,0,0,1e15)) end
     end
     balanceBox=bx(p4,tostring(configNumber(savedConfig.traderReserve,0,0,1e15)),u(0.48,0,0,27),u(0,0,1,-75))
-    local balanceLabel=lb(p4,"Остаток ₽:",u(0.48,0,0,27),u(0.52,0,1,-75),sb,17)
+    lb(p4,"Остаток ₽:",u(0.48,0,0,27),u(0.52,0,1,-75),sb,17)
     local action=bt(p4,"АВТО-ТОРГАШ: ВЫКЛ",u(1,0,0,36),u(0,0,1,-40),ac,8)
     local hint = lb(trCard,"Проверка торговца через сервер.",u(1,-24,0,30),u(0,12,0,153),sb,17)
     hint.TextWrapped=true
@@ -657,7 +639,7 @@ local pDoneB=bt(pModal,"Готово",u(0.45,-7,0,28),u(0.55,2,1,-33),ac,6) pDon
 
 local rarStyle={RARE={n="Редкий",c="#419BFF"},EPIC={n="Эпический",c="#9B55FF"},MYTHIC={n="Мифический",c="#EE4844"},LEGEND={n="Легендарный",c="#FFB932"},ORIGINAL={n="Оригинал",c="#38BDF8"}}
 rarStyle.LEGENDARY=rarStyle.LEGEND
-local function fmtNum(n) local s=tostring(math.floor(tonumber(n) or 0)) return s:reverse():gsub("(%d%d%d)","%1 "):reverse():gsub("^ ","") end
+local function fmtNum(n) local s=tostring(math.floor(tonumber(n) or 0)) return (s:reverse():gsub("(%d%d%d)","%1 "):reverse():gsub("^ ","")) end
 local function fmtPlateRich(rawStr)
     local txt,code=rawStr:match("^(.-)%s*%[(.-)%]$")
     if txt and code then
