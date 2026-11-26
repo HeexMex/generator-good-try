@@ -687,7 +687,7 @@ local optApplyB=bt(optModal,"ПРИМЕНИТЬ",u(0.48,0,0,30),u(0,8,1,-36),ac,
 local optCloseB=bt(optModal,"Закрыть",u(0.46,0,0,30),u(0.52,0,1,-36),cd,6,1) optCloseB.ZIndex=9
 local pModal=ui("Frame",{Size=u(1,0,1,0),BackgroundColor3=bg,Visible=false,ZIndex=8},p5,8,1)
 local pScroll=ui("ScrollingFrame",{Size=u(1,-10,1,-42),Position=u(0,5,0,5),BackgroundTransparency=1,ScrollBarThickness=4,CanvasSize=u(0,0,0,0),ZIndex=9},pModal)
-local pAllB=bt(pModal,"Выбрать все",u(0.55,-8,0,28),u(0,5,1,-33),cd,6) pAllB.ZIndex=9
+local pAllB=bt(pModal,"Выбрать до 30",u(0.55,-8,0,28),u(0,5,1,-33),cd,6) pAllB.ZIndex=9
 local pDoneB=bt(pModal,"Готово",u(0.45,-7,0,28),u(0.55,2,1,-33),ac,6) pDoneB.ZIndex=9
 
 local rarStyle={RARE={n="Редкий",c="#419BFF"},EPIC={n="Эпический",c="#9B55FF"},MYTHIC={n="Мифический",c="#EE4844"},LEGEND={n="Легендарный",c="#FFB932"},ORIGINAL={n="Оригинал",c="#38BDF8"}}
@@ -742,7 +742,7 @@ local function plateId(item)
 end
 
 extra.mailInventoryCache=nil
-local function scanMyPlates(sortByLabel)
+local function scanMyPlates(sortByLabel,suppliedState)
     local pref,bestMap,bestCnt=tostring(plr.UserId).."_",{},0
     local mounted,hasMountState = {},false
     local currentInventory,currentState=nil,nil
@@ -757,16 +757,17 @@ local function scanMyPlates(sortByLabel)
         local expiry=tonumber(rawget(item,"paidUntil"))
         return not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") and not rawget(item,"fav") and (not expiry or expiry>=workspace:GetServerTimeNow())
     end
-    local getState=Rem:FindFirstChild("GetState")
-    if getState then
-        local ok,state=pcall(function() return getState:InvokeServer() end)
+    local getState=not suppliedState and Rem:FindFirstChild("GetState")
+    if suppliedState or getState then
+        local ok,state=true,suppliedState
+        if not state then ok,state=pcall(function() return getState:InvokeServer() end) end
         if ok and type(state)=="table" then
             local inventory=state.inventory or state.rawInventory
             if type(inventory)=="table" then extra.mailInventoryCache=inventory
             elseif state.sameInventory~=true then extra.mailInventoryCache=nil end
             local index=state.car
             if index==nil and state.hasCar==false then index=0 end
-            if type(extra.mailInventoryCache)=="table" and type(index)=="number" and index>=0 then
+            if type(extra.mailInventoryCache)=="table" and type(index)=="number" and index>=0 and type(state.wall)=="table" then
                 local mountedId=plateId(rawget(extra.mailInventoryCache,index))
                 if index==0 or type(mountedId)=="string" then
                     hasMountState=true
@@ -850,6 +851,7 @@ local function renderPlateRows()
             button.Activated:Connect(function()
                 local item = slot.item
                 if not item then return end
+                if not selPlates[item.id] and countSel()>=30 then mSt.Text="В посылке не больше 30 номеров." return end
                 selPlates[item.id] = not selPlates[item.id] or nil
                 button.BackgroundColor3 = selPlates[item.id] and ac or cd
                 updPickTxt()
@@ -885,7 +887,7 @@ end
 local function checkMailPlates(ids)
     if #ids==0 then return {} end
     local items,hasMountState = scanMyPlates()
-    if not hasMountState then return nil,"Не удалось проверить номер на машине. Открой сейф и попробуй снова." end
+    if not hasMountState then return nil,"Не удалось проверить номера на машине и стене. Попробуй обновить инвентарь." end
     local labels = {}
     for _,item in ipairs(items) do labels[item.id] = item.label end
     local names,invalid = {},false
@@ -930,7 +932,7 @@ do
         local stateRemote=Rem:FindFirstChild("GetState")
         if stateRemote then
             local ok,state=pcall(function() return stateRemote:InvokeServer() end)
-            if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots,state.money end
+            if ok and type(state)=="table" and type(state.inv)=="table" and type(state.inv.slots)=="table" then return state.inv.slots,state.money,state end
         end
         if type(getgc)=="function" then
             local gcOk,objects=pcall(getgc,true)
@@ -943,15 +945,15 @@ do
         end
     end
     extra.readMailInventory=function()
-        local slots,money=inventory()
-        if type(slots)~="table" then return nil,money end
+        local slots,money,state=inventory()
+        if type(slots)~="table" then return nil,money,state end
         local available={}
         for _,slot in ipairs(slots) do
             if type(slot)=="table" and eligible(slot.id) and type(slot.n)=="number" and slot.n>0 then
                 available[slot.id]=(available[slot.id] or 0)+math.floor(slot.n)
             end
         end
-        return available,money
+        return available,money,state
     end
     extra.validateMailItems=function(items)
         local available=extra.readMailInventory()
@@ -1016,7 +1018,12 @@ do
 end
 pAllB.Activated:Connect(function()
     if refreshModal()==0 then return end
-    for _,item in ipairs(pickerItems) do selPlates[item.id]=true end
+    local selected=countSel()
+    for _,item in ipairs(pickerItems) do
+        if selected>=30 then break end
+        if not selPlates[item.id] then selPlates[item.id]=true selected+=1 end
+    end
+    if #pickerItems>30 then mSt.Text="Выбрано до 30 номеров — лимит одной посылки." end
     updPickTxt()
     renderPlateRows()
 end)
@@ -2041,10 +2048,10 @@ do
                 extra.statsSequence=seq
                 local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
                 data.mail_protocol=2
-                local invOk,mailInventory,mailBalance=pcall(extra.readMailInventory)
+                local invOk,mailInventory,mailBalance,mailState=pcall(extra.readMailInventory)
                 if invOk and type(mailInventory)=="table" and next(mailInventory) then data.mail_items=mailInventory end
                 if invOk and type(mailBalance)=="number" and mailBalance>=0 then latestBalance=math.floor(mailBalance) data.balance=latestBalance data.mail_balance=latestBalance end
-                local scanOk,plates,verified,counts=pcall(scanMyPlates)
+                local scanOk,plates,verified,counts=pcall(scanMyPlates,false,invOk and mailState or nil)
                 if scanOk and verified then
                     local candidates={}
                     for _,plate in ipairs(plates) do
@@ -2254,17 +2261,18 @@ do
                         attempts+=1
                         local ok,result=pcall(function() return inventory:InvokeServer("use",id) end)
                         local used=ok and type(result)=="number" and result>0
-                        if due then due[id]=os.clock()+(used and interval*60 or 60) end
+                        local unknown=not ok or result==nil
+                        if due then due[id]=os.clock()+((used or unknown) and interval*60 or 60) end
                         if used then successes+=1
-                        elseif ok and type(result)=="string" then lastFailure=result
-                        elseif not ok then lastFailure="нет ответа игры"
-                        else lastFailure="нет предмета или игра отклонила использование" end
+                        elseif unknown then lastFailure="нет ответа игры"..(due and "; повтор после интервала" or "")
+                        elseif type(result)=="string" then lastFailure=result..(due and "; повтор через минуту" or "")
+                        else lastFailure="нет предмета или игра отклонила использование"..(due and "; повтор через минуту" or "") end
                         task.wait(0.5)
                     end
                 end
             end
         end
-        if current==generation and attempts>0 then info.Text="Использовано зелий: "..successes.." из "..attempts.."."..(lastFailure and (due and " Повтор через минуту: " or " Ошибка: ")..lastFailure or "") end
+        if current==generation and attempts>0 then info.Text="Использовано зелий: "..successes.." из "..attempts.."."..(lastFailure and " "..lastFailure or "") end
     end
     local connection=Rem:WaitForChild("StateChanged").OnClientEvent:Connect(function(state)
         if type(state)~="table" or type(state.rollCount)~="number" then return end
@@ -2643,6 +2651,7 @@ local function sendMail()
     end
     if clean=="" then mSt.Text="Ошибка: впиши юзернейм." return end
     if amt<=0 and #platesArr==0 and totalItems==0 then mSt.Text="Выбери номера, предметы или впиши сумму." return end
+    if #platesArr>30 then mSt.Text="В посылке не больше 30 номеров." return end
     if totalItems>90 then mSt.Text="В посылке не больше 90 предметов." return end
     local plateNames,selectionError = checkMailPlates(platesArr)
     if not plateNames then mSt.Text=selectionError return end
