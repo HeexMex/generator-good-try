@@ -1,6 +1,17 @@
 local U,R,C,P,VU,L,RS=game:GetService("UserInputService"),game:GetService("ReplicatedStorage"),game:GetService("CoreGui"),game:GetService("Players"),game:GetService("VirtualUser"),game:GetService("Lighting"),game:GetService("RunService")
 local extra={}
 local plr=P.LocalPlayer
+do
+    local started=os.clock()
+    while not plr and os.clock()-started<120 do
+        task.wait(0.25)
+        plr=P.LocalPlayer
+    end
+    if not plr then
+        warn("[GGT] Не удалось дождаться LocalPlayer. Запусти скрипт в клиенте Roblox после входа в игру.")
+        return
+    end
+end
 local Http=game:GetService("HttpService")
 local accountPrefix="GGT/config_"..tostring(plr.UserId)
 local activeConfig="default"
@@ -688,6 +699,34 @@ local function plateId(item)
     return rawget(item,"uid") or rawget(item,"sn") or rawget(item,"id")
 end
 
+extra.nextPlateLookup=0
+function extra.plateOriginality(item)
+    if type(item)~="table" then return "unknown" end
+    if not extra.plateModule and os.clock()>=extra.nextPlateLookup then
+        extra.nextPlateLookup=os.clock()+30
+        local scripts=plr:FindFirstChild("PlayerScripts")
+        local client=scripts and scripts:FindFirstChild("PlatesClient",true)
+        local shared=client and client:FindFirstChild("SharedCopy")
+        local module=shared and shared:FindFirstChild("Plate")
+        if module then
+            local ok,result=pcall(require,module)
+            if ok and type(result)=="table" and type(result.ogState)=="function" then extra.plateModule=result end
+        end
+    end
+    if extra.plateModule then
+        local ok,state=pcall(extra.plateModule.ogState,item)
+        if ok then
+            if state=="og" then return "original" end
+            if state=="copy" then return "copy" end
+            if state==nil then return "untracked" end
+        end
+    end
+    local flag=rawget(item,"og")
+    if flag==true then return "original" end
+    if flag==false then return "copy" end
+    return "unknown"
+end
+
 extra.mailInventoryCache=nil
 local function scanMyPlates(sortByLabel,suppliedState)
     local pref,bestMap,bestCnt=tostring(plr.UserId).."_",{},0
@@ -724,7 +763,7 @@ local function scanMyPlates(sortByLabel,suppliedState)
                         local idV,txtV=plateId(item),type(item)=="table" and rawget(item,"text")
                         if type(idV)=="string" and idV:sub(1,#pref)==pref and type(txtV)=="string" then
                             bestCnt+=1
-                            if not sentPlates[idV] and available(item) then bestMap[idV]=txtV.." ["..tostring(rawget(item,"rarity") or "").."]" end
+                            if not sentPlates[idV] and available(item) then bestMap[idV]={label=txtV.." ["..tostring(rawget(item,"rarity") or "").."]",originality=extra.plateOriginality(item)} end
                         end
                     end
                 end
@@ -751,7 +790,7 @@ local function scanMyPlates(sortByLabel,suppliedState)
                         if type(idV)=="string" and idV:sub(1,#pref)==pref and type(txtV)=="string" then
                             valid=valid+1
                             if not sentPlates[idV] and available(item) then
-                                tmp[idV]=txtV.." ["..tostring(rawget(item,"rarity") or "").."]"
+                                tmp[idV]={label=txtV.." ["..tostring(rawget(item,"rarity") or "").."]",originality=extra.plateOriginality(item)}
                             end
                         end
                     end
@@ -762,14 +801,15 @@ local function scanMyPlates(sortByLabel,suppliedState)
     end
     local list={}
     if hasMountState then
-        for idV,lblTxt in pairs(bestMap) do
-            if not mounted[idV] then table.insert(list,{id=idV,label=lblTxt}) end
+        for idV,info in pairs(bestMap) do
+            if not mounted[idV] then table.insert(list,{id=idV,label=info.label,originality=info.originality}) end
         end
     end
     if sortByLabel then table.sort(list,function(a,b) return a.label<b.label end) end
-    local garageCounts=nil
+    local garageCounts,garageOriginality=nil,nil
     if type(currentInventory)=="table" and type(currentState)=="table" and type(currentState.car)=="number" and type(currentState.wall)=="table" then
         garageCounts={}
+        garageOriginality={original=0,copy=0,unknown=0,untracked=0}
         local hidden={}
         if currentState.car>0 then hidden[currentState.car]=true end
         for _,index in ipairs(currentState.wall) do if type(index)=="number" and index>0 then hidden[index]=true end end
@@ -777,10 +817,12 @@ local function scanMyPlates(sortByLabel,suppliedState)
             if not hidden[index] and type(item)=="table" and not rawget(item,"sold") and not rawget(item,"deleted") and not rawget(item,"inPost") then
                 local rarity=tostring(rawget(item,"rarity") or "UNKNOWN")
                 garageCounts[rarity]=(garageCounts[rarity] or 0)+1
+                local origin=extra.plateOriginality(item)
+                garageOriginality[origin]=(garageOriginality[origin] or 0)+1
             end
         end
     end
-    return list,hasMountState,garageCounts
+    return list,hasMountState,garageCounts,garageOriginality
 end
 
 local pickerItems,pickerRows = {},{}
@@ -2028,14 +2070,14 @@ do
                 local invOk,mailInventory,mailBalance,mailState=pcall(extra.readMailInventory)
                 if invOk and type(mailInventory)=="table" and next(mailInventory) then data.mail_items=mailInventory end
                 if invOk and type(mailBalance)=="number" and mailBalance>=0 then latestBalance=math.floor(mailBalance) data.balance=latestBalance data.mail_balance=latestBalance end
-                local scanOk,plates,verified,counts=pcall(scanMyPlates,false,invOk and mailState or nil)
+                local scanOk,plates,verified,counts,originality=pcall(scanMyPlates,false,invOk and mailState or nil)
                 if scanOk and verified then
                     local candidates={}
                     for _,plate in ipairs(plates) do
                         if #candidates>=3000 then break end
-                        candidates[#candidates+1]={id=plate.id,rarity=plate.label:match("%[([^%]]+)%]$") or "UNKNOWN",text=plate.label:match("^(.-) %[[^%]]+%]$")}
+                        candidates[#candidates+1]={id=plate.id,rarity=plate.label:match("%[([^%]]+)%]$") or "UNKNOWN",text=plate.label:match("^(.-) %[[^%]]+%]$"),originality=plate.originality}
                     end
-                    data.mail_plates=candidates data.mail_truncated=#plates>3000 data.garage_counts=counts
+                    data.mail_plates=candidates data.mail_truncated=#plates>3000 data.garage_counts=counts data.garage_originality=originality
                 end
                 local ok,response=pcall(function() return requestFn({Url=cfg.url.."/api/heartbeat",Method="POST",Headers={["Content-Type"]="application/json",Authorization="Bearer "..cfg.token},Body=Http:JSONEncode(data)}) end)
                 if ok and type(response)=="table" and (response.StatusCode or response.Status)==401 and shared and shared.url==cfg.url then pairAccount(shared.url,shared.code) end
@@ -2547,12 +2589,16 @@ do
             local base="shared_"..name:sub(1,20)
             local candidate,index=base,1
             if type(isfile)~="function" then status.Text="Executor не поддерживает проверку файлов." return end
-            while true do
-                local existsOk,exists=pcall(isfile,configFile(candidate))
-                if not existsOk then status.Text="Не удалось проверить конфиги." return end
-                if not exists then break end
-                index+=1 candidate=base.."_"..index
-                if index>999 then status.Text="Слишком много копий конфига." return end
+            if activeConfig==base or (activeConfig:sub(1,#base+1)==base.."_" and activeConfig:sub(#base+2):match("^%d+$")) then
+                candidate=activeConfig
+            else
+                while true do
+                    local existsOk,exists=pcall(isfile,configFile(candidate))
+                    if not existsOk then status.Text="Не удалось проверить конфиги." return end
+                    if not exists then break end
+                    index+=1 candidate=base.."_"..index
+                    if index>999 then status.Text="Слишком много копий конфига." return end
+                end
             end
             name=candidate
             local ok,encoded=pcall(function() return Http:JSONEncode(loaded) end)
@@ -2597,7 +2643,7 @@ do
         end
         table.sort(entries,function(a,b) return (a.shared and "1" or "0")..a.name < (b.shared and "1" or "0")..b.name end)
         for i,entry in ipairs(entries) do
-            local b=bt(profileList,(entry.shared and "🌐 " or "👤 ")..entry.name,u(1,-8,0,27),u(0,3,0,(i-1)*30),entry.name==activeConfig and ac or bg,6)
+            local b=bt(profileList,(entry.shared and "🌐 " or "👤 ")..entry.name,u(1,-8,0,27),u(0,3,0,(i-1)*30),not entry.shared and entry.name==activeConfig and ac or bg,6)
             b.ZIndex=26
             b.Activated:Connect(function() selectProfile(entry.name,entry.shared) end)
         end
@@ -2781,7 +2827,7 @@ do
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
         local permission=extra.mailRequest("POST","/api/mail/begin",{batch_id=batch.id})
         if responseStatus(permission)~=200 then
-            if responseStatus(permission)==409 then return "failed","Задание отменено до отправки" end
+            if responseStatus(permission)==409 then return "failed","Сервер не разрешил начать посылку; проверь /jobs" end
             return "unknown","Связь прервалась до подтверждения отправки"
         end
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
