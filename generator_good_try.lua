@@ -2066,7 +2066,7 @@ do
                 seq=seq+1
                 extra.statsSequence=seq
                 local data={session_id=session,sequence=seq,rolls_available=afkRolls.available,rolls=afkRolls.count,caught=afkRolls.caught,purchases=afkPurchases.count,spent=afkPurchases.spent,balance=latestBalance,last_roll=afkRolls.last,last_purchase=afkPurchases.last,purchased_mythic=afkPurchases.byRarity.MYTHIC or 0,rolled_mythic=afkRolls.byRarity.MYTHIC or 0,rolled_epic=afkRolls.byRarity.EPIC or 0}
-                data.mail_protocol=2
+                data.mail_protocol=3
                 local invOk,mailInventory,mailBalance,mailState=pcall(extra.readMailInventory)
                 if invOk and type(mailInventory)=="table" and next(mailInventory) then data.mail_items=mailInventory end
                 if invOk and type(mailBalance)=="number" and mailBalance>=0 then latestBalance=math.floor(mailBalance) data.balance=latestBalance data.mail_balance=latestBalance end
@@ -2796,10 +2796,11 @@ do
         if #batch.plates>0 then ok,plates,verified=pcall(scanMyPlates) end
         if not ok or not verified then return "failed","Не удалось проверить инвентарь номеров" end
         local available={}
-        for _,plate in ipairs(plates) do available[plate.id]=true end
+        for _,plate in ipairs(plates) do available[plate.id]=plate end
         local chosen,seen={},{}
         for _,uid in ipairs(batch.plates) do
             if type(uid)~="string" or not available[uid] or seen[uid] then return "failed","Номера изменились; требуется новая проверка" end
+            if batch.originals_only==true and available[uid].originality~="original" then return "failed","Номер больше не подтверждён как оригинал; нужна новая проверка" end
             seen[uid]=true chosen[#chosen+1]=uid
         end
         if not g.Parent then return "failed","Клиент закрыт до отправки" end
@@ -2812,8 +2813,11 @@ do
         if #chosen>0 then scanOk,fresh,stillVerified=pcall(scanMyPlates) end
         if not scanOk or not stillVerified then return "failed","Не удалось повторно проверить инвентарь" end
         local stillAvailable={}
-        for _,plate in ipairs(fresh) do stillAvailable[plate.id]=true end
-        for _,uid in ipairs(chosen) do if not stillAvailable[uid] then return "failed","Номера изменились перед отправкой" end end
+        for _,plate in ipairs(fresh) do stillAvailable[plate.id]=plate end
+        for _,uid in ipairs(chosen) do
+            if not stillAvailable[uid] then return "failed","Номера изменились перед отправкой" end
+            if batch.originals_only==true and stillAvailable[uid].originality~="original" then return "failed","Оригинальность изменилась перед отправкой" end
+        end
         if itemCount>0 or money>0 then
             local inventoryOk,inventory,balance=pcall(extra.readMailInventory)
             if not inventoryOk or type(inventory)~="table" then return "failed","Не удалось проверить предметы и баланс" end
@@ -2847,7 +2851,7 @@ do
                 if responseStatus(response)==200 then pendingResult=nil end
             elseif not sendInProgress and (not extra.lastMailSent or os.clock()-extra.lastMailSent>=6) then
                 sendInProgress=true
-                local response=extra.mailRequest("GET","/api/mail/next?protocol=2")
+                local response=extra.mailRequest("GET","/api/mail/next?protocol=3")
                 local ok,parsed=pcall(function() return Http:JSONDecode(response.Body) end)
                 local batch=ok and type(parsed)=="table" and parsed.batch
                 if responseStatus(response)==200 and type(batch)=="table" then
