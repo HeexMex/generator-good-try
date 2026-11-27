@@ -1627,31 +1627,47 @@ local afkRolls = (function()
     return afkRolls
 end)()
 
--- Session income is derived from authoritative balance updates. A single
--- combined balance update can contain both income and expenses.
+-- The game's cumulative government-sale total excludes market refunds.
 do
-    local lastBalance=nil
+    local lastGovSales=nil
     extra.sessionIncome=0
     extra.incomeAvailable=false
-    local function observeBalance(value)
-        if type(value)~="number" or value~=value or value<0 or value==math.huge then return end
+    local balanceSeen=false
+    local function validAmount(value)
+        return type(value)=="number" and value==value and value>=0 and value<math.huge
+    end
+    local function observeState(state, initial)
+        if type(state)~="table" then return end
+        if validAmount(state.money) and (not initial or not balanceSeen) then
+            extra.incomeBalance=math.floor(state.money)
+            balanceSeen=true
+        end
+        local info=type(state.stats)=="table" and state.stats.info
+        if type(info)~="table" or (initial and lastGovSales~=nil) then return end
+        local value=info.govSum
+        if value==nil then
+            if lastGovSales~=nil then return end
+            value=0
+        end
+        if not validAmount(value) then return end
         value=math.floor(value)
-        if lastBalance~=nil and value>lastBalance then extra.sessionIncome+=value-lastBalance end
-        lastBalance=value
-        extra.incomeBalance=value
+        if lastGovSales~=nil and value>lastGovSales then
+            extra.sessionIncome+=value-lastGovSales
+        end
+        lastGovSales=value
         extra.incomeAvailable=true
     end
     task.spawn(function()
         local changed=Rem:WaitForChild("StateChanged",15)
         if not g.Parent then return end
         local connection=changed and changed:IsA("RemoteEvent") and changed.OnClientEvent:Connect(function(state)
-            if type(state)=="table" then observeBalance(state.money) end
+            observeState(state,false)
         end)
         if connection then g.Destroying:Connect(function() connection:Disconnect() end) end
         local remote=Rem:FindFirstChild("GetState")
         if remote then
             local ok,state=pcall(function() return remote:InvokeServer() end)
-            if g.Parent and lastBalance==nil and ok and type(state)=="table" then observeBalance(state.money) end
+            if g.Parent and ok then observeState(state,true) end
         end
     end)
 end
@@ -1728,7 +1744,7 @@ local exitAfkMode = (function()
     end
 
     local bought,spent,counts,last,_,_,lastPurchaseBox = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
-    local rolled,earned,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Заработано","Выпавший","Стоимость")
+    local rolled,earned,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Продано гос-ву","Выпавший","Стоимость")
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
 
@@ -1960,7 +1976,8 @@ local exitAfkMode = (function()
         refreshAfk()
         applyCustomOpt({
             shadows=true, materials=true, textures=true, particles=true,
-            cleanup=optCfg.cleanup, no3d=true, hideui=true, fps=optCfg.fps,
+            cleanup=optCfg.cleanup or (previousOpt and previousOpt.cleanup==true),
+            no3d=true, hideui=true, fps=8,
         })
     end
     openAfk.Activated:Connect(extra.enterAfkMode)
