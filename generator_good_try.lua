@@ -1627,6 +1627,35 @@ local afkRolls = (function()
     return afkRolls
 end)()
 
+-- Session income is derived from authoritative balance updates. A single
+-- combined balance update can contain both income and expenses.
+do
+    local lastBalance=nil
+    extra.sessionIncome=0
+    extra.incomeAvailable=false
+    local function observeBalance(value)
+        if type(value)~="number" or value~=value or value<0 or value==math.huge then return end
+        value=math.floor(value)
+        if lastBalance~=nil and value>lastBalance then extra.sessionIncome+=value-lastBalance end
+        lastBalance=value
+        extra.incomeBalance=value
+        extra.incomeAvailable=true
+    end
+    task.spawn(function()
+        local changed=Rem:WaitForChild("StateChanged",15)
+        if not g.Parent then return end
+        local connection=changed and changed:IsA("RemoteEvent") and changed.OnClientEvent:Connect(function(state)
+            if type(state)=="table" then observeBalance(state.money) end
+        end)
+        if connection then g.Destroying:Connect(function() connection:Disconnect() end) end
+        local remote=Rem:FindFirstChild("GetState")
+        if remote then
+            local ok,state=pcall(function() return remote:InvokeServer() end)
+            if g.Parent and lastBalance==nil and ok and type(state)=="table" then observeBalance(state.money) end
+        end
+    end)
+end
+
 local exitAfkMode = (function()
     local overlay = ui("Frame", {
         Size=u(1,0,1,0), BackgroundColor3=bg, BackgroundTransparency=0.15,
@@ -1699,7 +1728,7 @@ local exitAfkMode = (function()
     end
 
     local bought,spent,counts,last,_,_,lastPurchaseBox = section("Снайпер рынка",12,"Куплено лотов","Потрачено","Последний")
-    local rolled,caught,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Улов (редкие+)","Выпавший","Стоимость")
+    local rolled,earned,rollCounts,lastRoll,lastPrice,priceLabel = section("Крутки номеров",264,"Прокруты","Заработано","Выпавший","Стоимость")
     local closeAfk = bt(card,"Выйти из AFK-режима",u(0,184,0,26),u(0.5,-92,1,-34),cd,6,1)
     closeAfk.ZIndex = 33
 
@@ -1843,10 +1872,53 @@ local exitAfkMode = (function()
     end
 
     local startedAt, previousOpt, previousOrder
+    local cameraSaved,cameraChangedConnection
+    local function restoreSavedCamera()
+        local saved=cameraSaved
+        cameraSaved=nil
+        if not saved then return end
+        if not saved.camera.Parent then return end
+        -- A destroyed subject or another camera change must not prevent
+        -- the remaining properties, especially CameraType, from restoring.
+        pcall(function() saved.camera.CameraSubject=saved.subject end)
+        pcall(function() saved.camera.CFrame=saved.cframe end)
+        pcall(function() saved.camera.Focus=saved.focus end)
+        pcall(function() saved.camera.CameraType=saved.cameraType end)
+    end
+    local function restoreCamera()
+        if cameraChangedConnection then cameraChangedConnection:Disconnect() cameraChangedConnection=nil end
+        restoreSavedCamera()
+    end
+    local function moveCameraAway()
+        if cameraSaved then restoreSavedCamera() end
+        local camera=workspace.CurrentCamera
+        if camera then
+            local ok,saved=pcall(function()
+                return {camera=camera,cameraType=camera.CameraType,subject=camera.CameraSubject,cframe=camera.CFrame,focus=camera.Focus}
+            end)
+            if ok then
+                cameraSaved=saved
+                local moved=pcall(function()
+                    camera.CameraType=Enum.CameraType.Scriptable
+                    camera.CFrame=CFrame.new(0,50000,0)
+                    camera.Focus=CFrame.new(0,50000,-1)
+                end)
+                if not moved then restoreSavedCamera() end
+            end
+        end
+    end
+    local function startAfkCamera()
+        moveCameraAway()
+        cameraChangedConnection=workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+            if overlay.Visible then moveCameraAway() end
+        end)
+    end
+    g.Destroying:Connect(restoreCamera)
     local function refreshAfk()
         local elapsed = math.floor(os.clock()-startedAt)
         timer.Text = string.format("AFK %02d:%02d:%02d",math.floor(elapsed/3600),math.floor(elapsed/60)%60,elapsed%60)
-        local money = readBalance()
+        local money = extra.incomeBalance
+        if money==nil then money=readBalance() end
         balance.Text = money and fmtNum(money).." ₽" or "—"
         bought.Text = tostring(afkPurchases.count)
         spent.Text = fmtNum(afkPurchases.spent).." ₽"
@@ -1855,10 +1927,10 @@ local exitAfkMode = (function()
         if historyBox.Visible and shownCount~=#afkPurchases.history then refreshPurchaseHistory() end
         if afkRolls.available then
             rolled.Text = tostring(afkRolls.count)
-            caught.Text = tostring(afkRolls.caught)
             for id,label in pairs(rollCounts) do label.Text = "×"..(afkRolls.byRarity[id] or 0) end
             lastRoll.Text = afkRolls.last
         end
+        earned.Text=extra.incomeAvailable and (fmtNum(extra.sessionIncome).." ₽") or "—"
         lastPrice.Text = afkRolls.batchPrice or afkRolls.lastPrice
         priceLabel.Text = afkRolls.batchPrice and "Стоимость пачки" or "Стоимость"
     end
@@ -1867,6 +1939,7 @@ local exitAfkMode = (function()
         if not overlay.Visible then return false end
         closePurchaseHistory()
         overlay.Visible = false
+        restoreCamera()
         g.DisplayOrder = previousOrder
         applyCustomOpt(previousOpt)
         tog(true)
@@ -1882,6 +1955,7 @@ local exitAfkMode = (function()
         oB.Visible = false
         g.DisplayOrder = 10000
         overlay.Visible = true
+        startAfkCamera()
         fitCard()
         refreshAfk()
         applyCustomOpt({
