@@ -1384,13 +1384,50 @@ mB.MouseButton1Click:Connect(function() tog(false) end)
 extra.statusIndicators={}
 extra.makeStatusIndicators=function(parent,position,zindex)
     local holder=ui("Frame",{Size=u(0,80,0,18),Position=position,BackgroundTransparency=1,ZIndex=zindex},parent)
-    for index,icon in ipairs({"🎯","🐪","🏪","⚙"}) do
-        local badge=ui("TextLabel",{Size=u(0,18,0,18),Position=u(0,(index-1)*20,0,0),
-            BackgroundColor3=c(172,58,64),BorderSizePixel=0,Text=icon,TextSize=12,
-            TextColor3=c(255,255,255),Font=Enum.Font.GothamBold,ZIndex=zindex+1},holder,5)
-        ui("TextLabel",{Size=u(0,8,0,8),Position=u(1,-8,1,-8),BackgroundTransparency=1,
-            Text=({"С","Т","Л","З"})[index],TextSize=8,TextColor3=c(255,255,255),
-            Font=Enum.Font.GothamBold,ZIndex=zindex+2},badge)
+    local white=c(255,255,255)
+    local function line(parent,x1,y1,x2,y2)
+        local dx,dy=x2-x1,y2-y1
+        ui("Frame",{Size=u(0,math.sqrt(dx*dx+dy*dy),0,1.2),
+            Position=u(0,(x1+x2)/2,0,(y1+y2)/2),AnchorPoint=Vector2.new(0.5,0.5),
+            BackgroundColor3=white,BorderSizePixel=0,Rotation=math.deg(math.atan2(dy,dx)),
+            ZIndex=zindex+2},parent)
+    end
+    local function ring(parent,x,y,size)
+        local circle=ui("Frame",{Size=u(0,size,0,size),Position=u(0,x,0,y),
+            BackgroundTransparency=1,BorderSizePixel=0,ZIndex=zindex+2},parent,size/2)
+        local outline=Instance.new("UIStroke",circle)
+        outline.Color,outline.Thickness=white,1.2
+    end
+    for index=1,4 do
+        local badge=ui("Frame",{Size=u(0,18,0,18),Position=u(0,(index-1)*20,0,0),
+            BackgroundColor3=c(172,58,64),BorderSizePixel=0,ZIndex=zindex+1},holder,5)
+        if index==1 then
+            ring(badge,4,4,10)
+            line(badge,9,2,9,6) line(badge,9,12,9,16)
+            line(badge,2,9,6,9) line(badge,12,9,16,9)
+        elseif index==2 then
+            -- Merchant and camel: head, body, humps, neck and legs.
+            ring(badge,2,3,3)
+            line(badge,3.5,7,3.5,13) line(badge,2,10,5,10)
+            line(badge,3.5,13,2,15) line(badge,3.5,13,5,15)
+            line(badge,6,9,8,6) line(badge,8,6,10,9)
+            line(badge,10,9,12,7) line(badge,12,7,14,9)
+            line(badge,6,9,6,12) line(badge,6,12,14,12)
+            line(badge,14,12,15,6) line(badge,15,6,17,6)
+            line(badge,7,12,7,15) line(badge,13,12,13,15)
+        elseif index==3 then
+            line(badge,3,7,15,7) line(badge,4,7,6,3)
+            line(badge,6,3,12,3) line(badge,12,3,14,7)
+            line(badge,4,7,4,15) line(badge,14,7,14,15)
+            line(badge,4,15,14,15) line(badge,7,10,11,10)
+            line(badge,7,10,7,15) line(badge,11,10,11,15)
+        else
+            ring(badge,5,5,8)
+            line(badge,9,2,9,5) line(badge,9,13,9,16)
+            line(badge,2,9,5,9) line(badge,13,9,16,9)
+            line(badge,4,4,6,6) line(badge,12,12,14,14)
+            line(badge,14,4,12,6) line(badge,6,12,4,14)
+        end
         table.insert(extra.statusIndicators,{index=index,badge=badge})
     end
 end
@@ -1700,7 +1737,7 @@ local exitAfkMode = (function()
         Size=u(0,520,0,356), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
         BackgroundColor3=bg, ZIndex=31,
     },overlay,12,1)
-    extra.makeStatusIndicators(overlay,u(1,-88,1,-26),35)
+    extra.makeStatusIndicators(overlay,u(1,-88,0,8),35)
     local scale = Instance.new("UIScale",card)
     local function fitCard()
         local area = overlay.AbsoluteSize
