@@ -77,7 +77,9 @@ local function parseM(str)
     elseif s:find("k") or s:find("к") then return math.floor(num*1e3) end
     return math.floor(num)
 end
-local oB=bt(g,"Меню",u(0,86,0,28),u(0,15,0.5,-14),sd,8,1) oB.Visible=false
+local oB=bt(g,"Меню",u(0,94,0,48),u(0,15,0.5,-24),sd,8,1) oB.Visible=false
+oB.TextYAlignment=Enum.TextYAlignment.Top
+oB.ClipsDescendants=false
 local m=ui("Frame",{Size=u(0,435,0,320),Position=u(0.5,-217,0.3,0),BackgroundColor3=bg},g,10,1)
 local tp=ui("Frame",{Size=u(1,0,0,34),BackgroundColor3=sd},m,10)
 local menuTitle=lb(tp,"Меню",u(0,140,1,0),u(0,12,0,0),ac,18)
@@ -1240,7 +1242,7 @@ do
         headerTint.Enabled,surfaceTint.Enabled,divider.Visible = useModern,useModern,useModern
         menuTitle.TextSize = useModern and 16 or 11
         menuTitle.TextColor3 = useModern and tx or ac
-        oB.Size = useModern and u(0,104,0,34) or u(0,86,0,28)
+        oB.Size = useModern and u(0,104,0,52) or u(0,94,0,48)
         oB.TextSize = useModern and 13 or 11
         classic.BackgroundColor3 = useModern and cd or ac
         modern.BackgroundColor3 = useModern and ac or cd
@@ -1386,10 +1388,13 @@ extra.makeStatusIndicators=function(parent,position,zindex)
         local badge=ui("TextLabel",{Size=u(0,18,0,18),Position=u(0,(index-1)*20,0,0),
             BackgroundColor3=c(172,58,64),BorderSizePixel=0,Text=icon,TextSize=12,
             TextColor3=c(255,255,255),Font=Enum.Font.GothamBold,ZIndex=zindex+1},holder,5)
+        ui("TextLabel",{Size=u(0,8,0,8),Position=u(1,-8,1,-8),BackgroundTransparency=1,
+            Text=({"С","Т","Л","З"})[index],TextSize=8,TextColor3=c(255,255,255),
+            Font=Enum.Font.GothamBold,ZIndex=zindex+2},badge)
         table.insert(extra.statusIndicators,{index=index,badge=badge})
     end
 end
-extra.makeStatusIndicators(oB,u(0.5,-40,1,2),35)
+extra.makeStatusIndicators(oB,u(0.5,-40,1,-21),35)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—", history={}}
 local afkRolls = (function()
@@ -1695,7 +1700,7 @@ local exitAfkMode = (function()
         Size=u(0,520,0,356), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
         BackgroundColor3=bg, ZIndex=31,
     },overlay,12,1)
-    extra.makeStatusIndicators(card,u(1,-91,1,-26),35)
+    extra.makeStatusIndicators(overlay,u(1,-88,1,-26),35)
     local scale = Instance.new("UIScale",card)
     local function fitCard()
         local area = overlay.AbsoluteSize
@@ -3236,8 +3241,7 @@ end
 task.spawn(function()
     local previous={}
     while g.Parent do
-        local state=extra.getRuntime()
-        local values={state.sniper,state.trader,state.stall,state.potions}
+        local values={run,extra.traderRunning==true,stRun,itemRule.isEnabled()}
         for _,entry in ipairs(extra.statusIndicators) do
             local enabled=values[entry.index]==true
             if previous[entry.index]~=enabled then
