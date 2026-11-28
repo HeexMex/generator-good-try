@@ -1301,6 +1301,7 @@ local tog
 do
     local TweenService = game:GetService("TweenService")
     local menuOpen = true
+    extra.menuIsOpen=function() return menuOpen end
     local tween,animationId = nil,0
     local phase = Instance.new("NumberValue",g)
     phase.Value = 1
@@ -1376,6 +1377,19 @@ do
     g.Destroying:Connect(function() if tween then tween:Cancel() end end)
 end
 mB.MouseButton1Click:Connect(function() tog(false) end)
+
+-- The same compact indicators are used on the collapsed button and AFK card.
+extra.statusIndicators={}
+extra.makeStatusIndicators=function(parent,position,zindex)
+    local holder=ui("Frame",{Size=u(0,80,0,18),Position=position,BackgroundTransparency=1,ZIndex=zindex},parent)
+    for index,icon in ipairs({"🎯","🐪","🏪","⚙"}) do
+        local badge=ui("TextLabel",{Size=u(0,18,0,18),Position=u(0,(index-1)*20,0,0),
+            BackgroundColor3=c(172,58,64),BorderSizePixel=0,Text=icon,TextSize=12,
+            TextColor3=c(255,255,255),Font=Enum.Font.GothamBold,ZIndex=zindex+1},holder,5)
+        table.insert(extra.statusIndicators,{index=index,badge=badge})
+    end
+end
+extra.makeStatusIndicators(oB,u(0.5,-40,1,2),35)
 
 local afkPurchases = {count=0, spent=0, byRarity={}, last="—", history={}}
 local afkRolls = (function()
@@ -1681,6 +1695,7 @@ local exitAfkMode = (function()
         Size=u(0,520,0,356), Position=u(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5),
         BackgroundColor3=bg, ZIndex=31,
     },overlay,12,1)
+    extra.makeStatusIndicators(card,u(1,-91,1,-26),35)
     local scale = Instance.new("UIScale",card)
     local function fitCard()
         local area = overlay.AbsoluteSize
@@ -1887,7 +1902,7 @@ local exitAfkMode = (function()
         if not currencyConflict then return currency end
     end
 
-    local startedAt, previousOpt, previousOrder
+    local startedAt, previousOpt, previousOrder, previousMenuOpen
     local cameraSaved,cameraChangedConnection
     local function restoreSavedCamera()
         local saved=cameraSaved
@@ -1958,13 +1973,13 @@ local exitAfkMode = (function()
         restoreCamera()
         g.DisplayOrder = previousOrder
         applyCustomOpt(previousOpt)
-        tog(true)
+        tog(previousMenuOpen,true)
         return true
     end
     closeAfk.Activated:Connect(exitAfkMode)
     extra.enterAfkMode=function()
         if overlay.Visible then return end
-        previousOpt,previousOrder = appliedOpt,g.DisplayOrder
+        previousOpt,previousOrder,previousMenuOpen = appliedOpt,g.DisplayOrder,extra.menuIsOpen()
         startedAt = os.clock()
         tipBox.Visible = false
         tog(false,true)
@@ -3218,6 +3233,21 @@ extra.getRuntime=function()
     return {sniper=run,mailTake=takeRun,stall=stRun,trader=extra.traderRunning==true,
         upkeep=extra.upkeepEnabled==true,claimTasks=extra.claimTasksEnabled==true,potions=itemRule.isEnabled(),taskAutomation=extra.taskAutomation==true}
 end
+task.spawn(function()
+    local previous={}
+    while g.Parent do
+        local state=extra.getRuntime()
+        local values={state.sniper,state.trader,state.stall,state.potions}
+        for _,entry in ipairs(extra.statusIndicators) do
+            local enabled=values[entry.index]==true
+            if previous[entry.index]~=enabled then
+                entry.badge.BackgroundColor3=enabled and c(38,145,83) or c(172,58,64)
+            end
+        end
+        previous=values
+        task.wait(1)
+    end
+end)
 extra.activateAllPurchases=function()
     local sniperReady=false
     for _,rarity in ipairs(rars) do if rarity.on and getRarMax(rarity.id)>0 then sniperReady=true break end end
